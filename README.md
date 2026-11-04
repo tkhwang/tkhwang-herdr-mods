@@ -18,8 +18,8 @@ After a first `apply`, restart Herdr (it sees new mod folders at start) and pick
 
 | Where | What you get |
 | --- | --- |
-| **Spaces list**<br>`better-spaces` | branch and PR status per space, nested worktrees, dev server ports, agent status glows, a cyan current space |
-| **Agents list**<br>`agents-dev` | agents grouped under their space, nested rows, the same glows and highlight |
+| **Spaces list**<br>`better-spaces` | branch and PR status per space, nested worktrees, workbranch tasks named after their repos with each repo's branch, dev server ports, agent status glows, a cyan current space |
+| **Agents list**<br>`agents-dev` | agents grouped under their space, nested rows, workbranch tasks named as in the Spaces list, the same glows and highlight |
 | **Tab bar**<br>`tabs-dev` | yellow agent tabs, wider tabs, **Git** and **Markdown** buttons, a 3 \| 2 column switch |
 | **`+` menu**<br>`herdr-open-with-zed` | **Open with Zed** for the focused terminal's folder |
 | **Side panel, Files**<br>`files-dev` | the previewed file feeds the **Markdown** button |
@@ -49,7 +49,7 @@ Both copy only the mods and files named in `sync.sh` (`mods`, `files`, plus copy
 ## Before you apply
 
 - **What runs, and what reaches the network.** `better-spaces` runs `git`, `hc` and `gh` (GitHub with your local `gh` login). The sparkle **Message** button in `better-changes` runs `claude -p`, so the staged diff goes to Anthropic through your Claude Code login, and its Push button runs `git push` with your git credentials. `git-graph` reaches the network only on Fetch, Pull, Push or deleting a remote branch, and asks GitHub's releases API once a day for a newer release. `markdown-browser` uses no network.
-- **Workbranch wrappers.** In a folder of repos that is not a repo itself, `better-changes` and `changes-dev` show a repo picker, `git-graph` shows a Manygit list, and `better-spaces` shows no branch or PR.
+- **Workbranch wrappers.** In a folder of repos that is not a repo itself, `better-changes` and `changes-dev` show a repo picker, `git-graph` shows a Manygit list, and `better-spaces` and `agents-dev` name a workbranch task space (a `.workbranch.task` file beside its repos) after the repos inside it and show each repo's branch (no PR status there); a plain folder of repos keeps its name.
 - **Theme picks.** A theme picked in Settings > Look is kept per layout in `layouts/.state/`; pick the Catppuccin themes there again if one was picked before.
 - **Command time limit.** Herdr stops a command after 30 s, so a slow fetch or push in `git-graph` can fail.
 
@@ -67,9 +67,9 @@ Clone of the shipped `main` layout; its spaces block points to `better-spaces`, 
 <details>
 <summary><b><code>better-spaces</code></b> · Spaces list · <a href="https://github.com/munza/herdr-mods/tree/main/better-spaces">munza/herdr-mods</a> at <code>77d94f7</code>, patched</summary>
 
-**Markers:** `dev ports`, `space colors`, `status glow`, `current highlight`
+**Markers:** `dev ports`, `space colors`, `status glow`, `current highlight`, `wrapper repos`
 
-[munza/herdr-mods](https://github.com/munza/herdr-mods/tree/main/better-spaces) at `77d94f7` (branch right-aligned on the space row, worktrees nested, PR status from `gh`), in the spaces block. Patched with the same `dev ports` line (`ports.js` and lines marked `dev ports`), and `updateColors` waits up to 2 s after a start for the shared `space.colors` (marked `space colors`): without that its first tick recolored every space. It runs `git`, `hc` and `gh` (GitHub with your local `gh` login). A space whose first terminal is in a non-repo folder (a workbranch wrapper) shows no branch or PR.
+[munza/herdr-mods](https://github.com/munza/herdr-mods/tree/main/better-spaces) at `77d94f7` (branch right-aligned on the space row, worktrees nested, PR status from `gh`), in the spaces block. Patched with the same `dev ports` line (`ports.js` and lines marked `dev ports`), and `updateColors` waits up to 2 s after a start for the shared `space.colors` (marked `space colors`): without that its first tick recolored every space. It runs `git`, `hc` and `gh` (GitHub with your local `gh` login). A space whose first terminal is in a workbranch task folder (not a repo: a `.workbranch.task` file beside the repos it holds, such as `feat-update-1105/tkhwang-herdr-mods`) is named after those repos (`tkhwang-herdr-mods`), with each repo's branch, ahead and behind on a dim line under the name; the task's own name and folder are the name's tooltip, a space the person named keeps its name with `repo: branch` lines, and the repos are published as the shared `better-spaces.wrappers` for the Agents list (marked `wrapper repos`; `TASK_REPOS`, `better-changes`' repo loop behind the task-file check, at most 6 repos, read every 15 s while the window is active and after a command ends in the space). No PR status for a wrapper.
 
 Also merged in: the agent status glows of [filipores/herdr-spaces-status](https://github.com/filipores/herdr-spaces-status) at `4881e68` (green done, orange blocked, a breathing neutral contour while an agent works; `navigation.js` and lines marked `status glow`; commands `better-spaces.first_done` and `better-spaces.next_working`, no keys bound), Apache-2.0 ([`LICENSE-herdr-spaces-status`](LICENSE-herdr-spaces-status), [`NOTICE-herdr-spaces-status`](NOTICE-herdr-spaces-status)). Its own `spaces-glow` mod isn't installed: it replaces the same Spaces block and would drop the branch, PR and port lines.
 
@@ -80,13 +80,15 @@ The active space row is tinted cyan (`#22d3ee`), with a cyan bar on the left and
 <details>
 <summary><b><code>agents-dev</code></b> · Agents list · clone of Herdr's <code>agents</code> 0.1.11</summary>
 
-**Markers:** `space headers`, `status glow`, `current highlight`, `nested rows`
+**Markers:** `space headers`, `status glow`, `current highlight`, `nested rows`, `wrapper repos`
 
 "Grouped by space" headers with the space's colored letter, bold name, separators and git branch; patch marked `space headers`. Until a sort is picked it groups by space (the shipped default is Priority, which has no space headers); the pick is kept by the app, not in this repo.
 
 Each agent row also gets the Spaces list's status glow (green done, orange blocked, breathing contour while working; marked `status glow`), and the focused agent's row the same cyan highlight (marked `current highlight`).
 
 Under a space header each agent row, and its sub-terminal rows, steps in 22px (the header's avatar and gap, the depth the Spaces list nests a worktree at), so the space reads as the heading and its agents as the items under it; pinned and priority rows, which name their space themselves, stay at the edge (marked `nested rows`; the `NEST` constant sets the depth).
+
+A workbranch task space's header is named after its repos too, with their branches when none of its agents' folders has one, read from `better-spaces`' shared `better-spaces.wrappers` (marked `wrapper repos`).
 
 </details>
 
