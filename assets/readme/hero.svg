@@ -108,19 +108,20 @@
     <rect x="620" y="205" width="120" height="28" rx="6" fill="#60b9fc"/>
     <text class="m" x="632" y="225" font-size="20" font-weight="700" fill="#14151c">tabs-dev</text>
 
-    <text class="m" x="836" y="223" font-size="16" fill="#a6adc8" text-anchor="end">Files</text>
-    <text class="m" x="916" y="223" font-size="16" fill="#a6adc8" text-anchor="end">Changes</text>
-    <rect x="926" y="206" width="45" height="25" rx="6" fill="#60b9fc" fill-opacity="0.18"/>
-    <text class="m" x="963" y="223" font-size="16" fill="#60b9fc" text-anchor="end">Git</text>
-    <text class="m" x="1056" y="223" font-size="16" fill="#7f849c" text-anchor="end">Markdown</text>
+    <!-- + menu, then the 3 | 2 column switch, then the panel buttons -->
+    <text class="m" x="790" y="225" font-size="20" fill="#a6adc8" text-anchor="middle">+</text>
 
-    <!-- 3 | 2 column switch -->
-    <rect x="1068" y="206" width="48" height="25" rx="6" fill="none" stroke="#cdd6f4" stroke-opacity="0.25"/>
-    <rect x="1068" y="206" width="24" height="25" rx="6" fill="#60b9fc" fill-opacity="0.18"/>
-    <line x1="1092" y1="206" x2="1092" y2="231" stroke="#cdd6f4" stroke-opacity="0.25"/>
-    <g fill="#60b9fc"><rect x="1073" y="212" width="3" height="13" rx="1"/><rect x="1078.5" y="212" width="3" height="13" rx="1"/><rect x="1084" y="212" width="3" height="13" rx="1"/></g>
-    <g fill="#a6adc8"><rect x="1097" y="212" width="6" height="13" rx="1"/><rect x="1105" y="212" width="6" height="13" rx="1"/></g>
-    <text class="m" x="1134" y="225" font-size="20" fill="#a6adc8" text-anchor="middle">+</text>
+    <rect x="812" y="206" width="48" height="25" rx="6" fill="none" stroke="#cdd6f4" stroke-opacity="0.25"/>
+    <rect x="812" y="206" width="24" height="25" rx="6" fill="#60b9fc" fill-opacity="0.18"/>
+    <line x1="836" y1="206" x2="836" y2="231" stroke="#cdd6f4" stroke-opacity="0.25"/>
+    <g fill="#60b9fc"><rect x="817" y="212" width="3" height="13" rx="1"/><rect x="822.5" y="212" width="3" height="13" rx="1"/><rect x="828" y="212" width="3" height="13" rx="1"/></g>
+    <g fill="#a6adc8"><rect x="841" y="212" width="6" height="13" rx="1"/><rect x="849" y="212" width="6" height="13" rx="1"/></g>
+
+    <text class="m" x="918" y="223" font-size="16" fill="#a6adc8" text-anchor="end">Files</text>
+    <text class="m" x="998" y="223" font-size="16" fill="#a6adc8" text-anchor="end">Changes</text>
+    <rect x="1010" y="206" width="45" height="25" rx="6" fill="#60b9fc" fill-opacity="0.18"/>
+    <text class="m" x="1047" y="223" font-size="16" fill="#60b9fc" text-anchor="end">Git</text>
+    <text class="m" x="1140" y="223" font-size="16" fill="#7f849c" text-anchor="end">Markdown</text>
   </g>
 
   <!-- Center pane: the active tab, a terminal -->

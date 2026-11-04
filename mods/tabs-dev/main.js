@@ -168,7 +168,7 @@ export default class Tabs extends View {
       .on_mouse_down("left", stop)
       .when(Boolean(md), el => el.hover(s => s.bg(t.hover)).on_click((_e, cx) => showMarkdown(md, cx)))
       .child(svg("mods/markdown-browser/markdown.svg").size(14)).child("Markdown");
-    // view mode: a 3-column | 2-column switch left of + (Desktop | Mobile inside), the mode you are in
+    // view mode: a 3-column | 2-column switch right of + (Desktop | Mobile inside), the mode you are in
     // lit; the other one switches.
     const mobile = viewMode() === "mobile";
     const viewChoice = (id, icon, label, on, mode) => div().id(id).size(24).flex_none().flex().items_center().justify_center().rounded(5)
@@ -183,9 +183,9 @@ export default class Tabs extends View {
       .on_mouse_up("left", () => { this.pressed = null; })
       .on_scroll_wheel(e => { if (Math.abs(e.delta.y) >= 1) run(e.delta.y > 0 ? "tab.prev" : "tab.next"); })
       .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_center().gap(3).overflow_x_scrollbar().children(shown.map(item)))
-      .child(viewButton) // view mode
       // open with zed: the + menu with an "Open with Zed" row (mods/herdr-open-with-zed), one row taller.
       .child(button("tab-new", "+", () => openOverlay({ mod: "herdr-open-with-zed", kind: "popup", width: 250, height: 543 })))
+      .child(viewButton) // view mode
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
       .child(panelButton("graph", "Git", "mods/git-graph/icons/graph.svg")) // git graph

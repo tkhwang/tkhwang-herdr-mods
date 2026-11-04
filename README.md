@@ -103,7 +103,7 @@ A **Git** button beside Files and Changes opens `git-graph` in the same side pan
 
 A **Markdown** button renders the Markdown file the open panel is on (Files' preview, or the file picked in Changes) in a `markdown-browser` tab in the center, one per space, switched in place on the next click and lit while that tab is shown; it stays dim until a Markdown file is picked (marked `markdown browser`; `markdown.js`, shared `markdown-tab.tabs`, `markdown-browser.show` and `markdown-browser.slots`).
 
-Left of `+`, a 3-column | 2-column switch: 2 columns zooms the shown tab's agent pane (else its focused pane) so the shell column folds away and the file panel keeps its room, also when switching tabs; 3 columns unzooms only the panes it zoomed, never one zoomed by hand (marked `view mode`; `columns-3.svg`, `columns-2.svg`, shared `tabs-dev.view` and `tabs-dev.view-zoomed`).
+Right of `+`, a 3-column | 2-column switch: 2 columns zooms the shown tab's agent pane (else its focused pane) so the shell column folds away and the file panel keeps its room, also when switching tabs; 3 columns unzooms only the panes it zoomed, never one zoomed by hand (marked `view mode`; `columns-3.svg`, `columns-2.svg`, shared `tabs-dev.view` and `tabs-dev.view-zoomed`).
 
 </details>
 
