@@ -19,8 +19,8 @@ function markdownTarget(space, active) {
 }
 
 // view mode: Desktop shows a tab's panes side by side (agent | shell | file panel); Mobile shows
-// one pane per tab, its agent (else the focused pane) zoomed, so the shell column folds away and
-// the file panel keeps its room. Shared, so it survives restarts; the panes Mobile zoomed are
+// an agent's tab as that one pane, zoomed, so the shell column folds away and the file panel keeps
+// its room. A tab without an agent keeps all its panes in both. Shared, so it survives restarts; the panes Mobile zoomed are
 // remembered so Desktop unzooms exactly those.
 const VIEW = "tabs-dev.view";
 const VIEW_ZOOMED = "tabs-dev.view-zoomed";
@@ -67,16 +67,23 @@ export default class Tabs extends View {
     this.viewMode = mode; this.viewTab = tab;
     const alive = new Set(panes().map(p => p.pane));
     const ours = (shared(VIEW_ZOOMED) ?? []).filter(p => alive.has(p));
-    if (mode === "mobile") {
-      if (inTab.length < 2 || zoomed) return;
-      const target = inTab.find(p => p.program?.agent || p.status) ?? inTab.find(p => p.focused) ?? inTab[0];
-      run("pane.zoom", { pane: target.pane });
-      run("pane.focus", { pane: target.pane });
-      setShared(VIEW_ZOOMED, [...ours, target.pane]);
-    } else if (zoomed && ours.includes(zoomed.pane)) {
+    // Undo a zoom this mode made in the shown tab; a zoom done by hand stays.
+    const unzoomOurs = () => {
+      if (!zoomed || !ours.includes(zoomed.pane)) return;
       run("pane.zoom", { pane: zoomed.pane });
       setShared(VIEW_ZOOMED, ours.filter(p => p !== zoomed.pane));
-    }
+    };
+    if (mode === "mobile") {
+      // Only a tab with an agent folds to it. A tab without one (herdr-dev.sh's grid of test
+      // watchers and servers, a plain shell split) keeps all its panes, and a zoom this mode
+      // left there before comes undone.
+      const agent = inTab.find(p => p.program?.agent || p.status);
+      if (!agent) return unzoomOurs();
+      if (inTab.length < 2 || zoomed) return;
+      run("pane.zoom", { pane: agent.pane });
+      run("pane.focus", { pane: agent.pane });
+      setShared(VIEW_ZOOMED, [...ours.filter(p => p !== agent.pane), agent.pane]);
+    } else unzoomOurs();
   }
 
   syncPanel(space, panel, body, enabled) {

@@ -51,6 +51,12 @@ const TAB_OPEN_TIMEOUT_MS = 1500;
 const AI_COMMAND = ["claude", "-p", "--tools", "", "--no-session-persistence", "--setting-sources", "", "--output-format", "text", "--model", "sonnet"];
 const AI_EXAMPLES = 8;
 
+// commit box: how the row under the message box splits between its three buttons, as flex
+// weights after the gaps: Message (ai message), Commit, and Push (push button). A narrow panel
+// keeps every icon and ends a label that doesn't fit in "…".
+const BUTTON_WEIGHTS = { message: 1, commit: 2, push: 1 };
+const buttonLabel = (text) => div().min_w(0).truncate().child(text);
+
 // wrapper repos: a folder that isn't a Git repo itself but holds repos right under it
 // (a workbranch task: backend/ and frontend/ side by side). Prints those folders' names,
 // hidden ones included.
@@ -131,7 +137,7 @@ export default class Changes extends View {
       this.message = this.input.value();
       cx.notify();
     });
-    this.input.on("submit", (_e, cx) => this.commit(cx));
+    this.input.on("submit", (_e, cx) => this.whenLoaded((cx) => this.commit(cx), cx)); // commit box
     this.startPolling(cx);
     this.listenForCommands(cx);
     this.refresh(cx);
@@ -409,11 +415,23 @@ export default class Changes extends View {
       } finally {
         this.loading = false;
         cx.notify();
+        // commit box: a button pressed during this refresh runs now, on the fresh state (its own
+        // checks still apply); one pressed before the panel moved to another repo is dropped.
+        const queued = this.queued;
+        this.queued = null;
         // wrapper repos: a wrapper just found (or a repo picked meanwhile) moved the
         // context; load it now rather than at the next poll.
         if (this.contextKey() !== this.context) this.refresh(cx);
+        else if (queued && context === this.context) queued(cx);
       }
     });
+  }
+
+  // commit box: run a footer button's action now, or right after a background refresh in flight.
+  // The buttons keep their look during one, so a press then must not be lost.
+  whenLoaded(action, cx) {
+    if (this.loading) this.queued = action;
+    else action(cx);
   }
 
   // push button: where Push sends HEAD. With an upstream branch on a remote, HEAD goes to that
@@ -752,17 +770,22 @@ export default class Changes extends View {
   // push button: send HEAD to its upstream branch, or put the branch on its remote and track it.
   // Never forced: a rejected push (the remote moved on since the last fetch) shows git's reason
   // as a note. Busy meanwhile, like a commit; Herdr stops it after 30 s.
-  canPush() {
+  // Whether there is something to push where the panel is. The button's look follows this and
+  // not `loading`: refresh() sets that for 0.1 to 0.4 s every 10 s and on every file change, and
+  // the button blinked with it. canPush() adds that it can run right now.
+  pushReady() {
     const p = this.pushTo;
     return Boolean(
       p?.remote &&
       (!p.tracked || p.ahead > 0) &&
       this.root &&
-      !this.loading &&
-      !this.busy &&
       this.contextKey() === this.context &&
       this.mode === "sidebar",
     );
+  }
+
+  canPush() {
+    return this.pushReady() && !this.loading && !this.busy;
   }
 
   pushHead(cx) {
@@ -1254,7 +1277,8 @@ export default class Changes extends View {
   // to describe; a spinner while the model writes.
   renderAiButton(t) {
     const writing = this.operation === "ai";
-    const enabled = Boolean(this.root && !this.busy && !this.loading && this.stagedCount && !this.conflicts);
+    // commit box: no `loading` here, so a background refresh doesn't blink it; a press then waits for it (whenLoaded).
+    const enabled = Boolean(this.root && !this.busy && this.stagedCount && !this.conflicts);
     return div()
       .id("changes-ai-message")
       .tooltip(
@@ -1264,11 +1288,16 @@ export default class Changes extends View {
             ? "Write a commit message with AI from the staged changes"
             : "Stage changes first, then let AI write the message",
       )
-      .size(28)
-      .flex_none()
+      .h(28)
+      .px(8)
+      .flex_basis(0)
+      .flex_grow(BUTTON_WEIGHTS.message) // commit box
+      .min_w(0)
       .flex()
+      .gap(5)
       .items_center()
       .justify_center()
+      .text_size(em(0.85))
       .rounded(5)
       .border_1()
       .border_color(writing ? t.accent : t.border)
@@ -1279,13 +1308,14 @@ export default class Changes extends View {
         el
           .cursor_pointer()
           .hover((s) => s.bg(t.hover).text_color(t.foreground))
-          .on_click((_e, cx) => this.suggestMessage(cx)),
+          .on_click((_e, cx) => this.whenLoaded((cx) => this.suggestMessage(cx), cx)),
       )
       .child(
         writing
-          ? svg("mods/workspace-chrome/spinner.svg").size(14).text_color(t.accent).spin(900)
-          : svg("mods/better-changes/sparkle.svg").size(14),
-      );
+          ? svg("mods/workspace-chrome/spinner.svg").size(14).flex_none().text_color(t.accent).spin(900)
+          : svg("mods/better-changes/sparkle.svg").size(14).flex_none(),
+      )
+      .child(buttonLabel(writing ? "Writing…" : "Message"));
   }
 
   // push button: right of Commit, at the edge, with how many commits HEAD is ahead. Solid (the next step) when
@@ -1293,7 +1323,7 @@ export default class Changes extends View {
   renderPushButton(t, commitEnabled) {
     const p = this.pushTo;
     const pushing = this.operation === "push";
-    const enabled = this.canPush();
+    const enabled = this.pushReady() && !this.busy;
     const solid = enabled && !commitEnabled;
     const plural = (n) => `${n} commit${n === 1 ? "" : "s"}`;
     const tip = pushing
@@ -1319,9 +1349,13 @@ export default class Changes extends View {
       .tooltip(tip)
       .h(28)
       .px(8)
+      .flex_basis(0)
+      .flex_grow(BUTTON_WEIGHTS.push) // commit box
+      .min_w(0)
       .flex()
       .gap(5)
       .items_center()
+      .justify_center()
       .rounded(5)
       .border_1()
       .border_color(pushing ? t.accent : t.border)
@@ -1332,22 +1366,23 @@ export default class Changes extends View {
         el
           .cursor_pointer()
           .when(!solid, (s) => s.hover((h) => h.bg(t.hover)))
-          .on_click((_e, cx) => this.pushHead(cx)),
+          .on_click((_e, cx) => this.whenLoaded((cx) => this.pushHead(cx), cx)),
       )
       .child(
         pushing
-          ? svg("mods/workspace-chrome/spinner.svg").size(14).text_color(t.accent).spin(900)
-          : svg("mods/better-changes/push.svg").size(14),
+          ? svg("mods/workspace-chrome/spinner.svg").size(14).flex_none().text_color(t.accent).spin(900)
+          : svg("mods/better-changes/push.svg").size(14).flex_none(),
       )
-      .child(pushing ? "Pushing…" : p?.tracked && p.ahead ? `Push ↑${p.ahead}` : "Push");
+      .child(buttonLabel(pushing ? "Pushing…" : p?.tracked && p.ahead ? `Push ↑${p.ahead}` : "Push"));
   }
 
   renderCommitFooter(t, repo = null) {
+    // commit box: no `loading` here, so a background refresh doesn't blink Commit (or Push's
+    // solid look, which turns on when Commit is off); a press then waits for it (whenLoaded).
     const enabled = Boolean(
       this.message.trim() &&
       this.root &&
       !this.busy &&
-      !this.loading &&
       this.stagedCount &&
       !this.conflicts,
     );
@@ -1374,25 +1409,29 @@ export default class Changes extends View {
           .gap(6)
           .items_center()
           .child(this.renderAiButton(t)) // ai message
-          .child(div().flex_1()) // commit box: the buttons under the box, at the right edge (push button: Commit, then Push)
+          // commit box: the buttons under the box fill the row by BUTTON_WEIGHTS (push button: Commit, then Push)
           .child(
             div()
               .id("changes-commit")
               .tooltip("Commit staged changes only")
               .h(28)
               .px(8)
+              .flex_basis(0)
+              .flex_grow(BUTTON_WEIGHTS.commit)
+              .min_w(0)
               .flex()
               .gap(5)
               .items_center()
+              .justify_center()
               .rounded(5)
               .border_1()
               .border_color(t.border)
               .bg(enabled ? t.solid : t.raised)
               .text_color(enabled ? t.solid_foreground : t.dim)
               .text_size(em(0.85))
-              .when(enabled, (el) => el.cursor_pointer().on_click((_e, cx) => this.commit(cx)))
-              .child(svg("mods/better-changes/commit.svg").size(14))
-              .child(this.operation === "commit" ? "Committing…" : "Commit staged"),
+              .when(enabled, (el) => el.cursor_pointer().on_click((_e, cx) => this.whenLoaded((cx) => this.commit(cx), cx)))
+              .child(svg("mods/better-changes/commit.svg").size(14).flex_none())
+              .child(buttonLabel(this.operation === "commit" ? "Committing…" : "Commit staged")),
           )
           .child(this.renderPushButton(t, enabled)), // push button
       )
