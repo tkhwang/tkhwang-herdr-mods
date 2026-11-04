@@ -63,9 +63,12 @@ const GIT_FALLBACK_MS = 15000;
 // wrapper repos: a space whose folder is a workbranch task (`.workbranch.task` beside the
 // repos it checks out: backend/ and frontend/ side by side), not a repo. The folder names
 // the task, not the project, so the row is named after the repos and shows each one's
-// branch under it. A plain folder of repos (~/git) keeps its own name. The repo loop is
-// better-changes' repo picker line; hidden folders included.
-const TASK_REPOS = '[ -f .workbranch.task ] || exit 0; for d in */ .[!.]*/; do [ -e "$d.git" ] && printf "%s\\n" "${d%/}"; done; exit 0';
+// branch under it. A plain folder of repos (~/git) keeps its own name: NOT_A_TASK. The repo
+// loop is better-changes' repo picker line; hidden folders included.
+const NOT_A_TASK = 3; // TASK_REPOS' exit code: no `.workbranch.task` here
+const TASK_REPOS =
+  `[ -f .workbranch.task ] || exit ${NOT_A_TASK}; ` +
+  'for d in */ .[!.]*/; do [ -e "$d.git" ] && printf "%s\\n" "${d%/}"; done; exit 0';
 const WRAPPER_MAX_REPOS = 6;
 // wrapper repos: shared { [space id]: { folder, repos: [{ name, branch, ahead, behind }] } },
 // for other mods (agents-dev's space headers).
@@ -156,6 +159,7 @@ export default class Spaces extends View {
     this.at = {}; // Space ID -> checkout key at the previous refresh.
     this.watching = new Set(); // local repos' git folders
     this.wrappers = Object.create(null); // wrapper repos: checkout key -> { repos }
+    this.emptyTasks = new Set(); // wrapper repos: task folders with no readable repos yet, retried like unsure
     this.wrappersKey = ""; // wrapper repos: what was last published as shared WRAPPERS
     // Spaces made while this runs wait (at most a moment) for their git, so a
     // worktree appears under its repo instead of jumping there.
@@ -355,7 +359,9 @@ export default class Spaces extends View {
 
     if (window().active) {
       for (const key of usedKeys) {
-        const needsPolling = this.git[key] || this.unsure.has(key) || this.wrappers[key]; // wrapper repos
+        // wrapper repos: a task folder polls too, before and after its repos are read.
+        const needsPolling =
+          this.git[key] || this.unsure.has(key) || this.wrappers[key] || this.emptyTasks.has(key);
         if (
           needsPolling &&
           !this.folded.has(JSON.parse(key)[0]) &&
@@ -474,6 +480,7 @@ export default class Spaces extends View {
       }
       this.git[key] = info;
       delete this.wrappers[key]; // wrapper repos
+      this.emptyTasks.delete(key); // wrapper repos
       if (!on) this.watch(repo, cx);
     } catch {
       // Couldn't ask (the machine is away): keep what it showed, look again later.
@@ -483,12 +490,17 @@ export default class Spaces extends View {
   }
 
   // wrapper repos: the repos right under a workbranch task folder, each with its branch and
-  // ahead/behind, read the way `check` reads a repo. None (or the home folder): not a task.
+  // ahead/behind, read the way `check` reads a repo. No task file (or the home folder): not a
+  // task. A task whose repos could not be read (none yet, a worktree still being made) is
+  // asked again by the poll until they can be, like `unsure`.
   async checkWrapper(key, cwd, on) {
     delete this.wrappers[key];
+    this.emptyTasks.delete(key);
     if (!cwd || cwd === "/" || cwd === home()) return;
     try {
       const ls = await exec("sh", ["-c", TASK_REPOS], { cwd, on });
+      if (ls.code === NOT_A_TASK) return;
+      this.emptyTasks.add(key);
       if (ls.code !== 0) return;
       const base = cwd.replace(/\/+$/, "");
       const names = ls.stdout.split("\n").filter(Boolean).slice(0, WRAPPER_MAX_REPOS);
@@ -511,9 +523,13 @@ export default class Spaces extends View {
         }
         repos.push(repo);
       }
-      if (repos.length) this.wrappers[key] = { repos };
+      if (repos.length) {
+        this.wrappers[key] = { repos };
+        this.emptyTasks.delete(key);
+      }
     } catch {
-      // Couldn't ask (no sh, the machine is away): not a wrapper until the next look.
+      // Couldn't ask (no sh, the machine is away): look again later.
+      this.emptyTasks.add(key);
     }
   }
 
