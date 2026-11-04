@@ -20,7 +20,7 @@ export class Menu {
 
   choose(i, cx) {
     const it = this.items[i], { overlay, ctx } = props();
-    if (!it || it.separator || this.busy) return;
+    if (!it || it.separator || this.busy !== undefined) return; // review fixes: item 0 can be the busy one
     const a = it.action;
     if (a.type === "newTab") {
       // As Herdr's + menu: a tab in the selected space, here in the repository.

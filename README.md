@@ -44,7 +44,7 @@ After a first `apply`, restart Herdr (it sees new mod folders at start) and pick
 
 The [Herdr app](https://herdr.dev/core/) (herdr-core desktop window) keeps its layout and mods in `~/.config/herdr-app`. The customized ones live here as copies, not symlinks: the app rewrites the layout file as the window is used.
 
-Both copy only the mods and files named in `sync.sh` (`mods`, `files`, plus copy-on-select and the Catppuccin themes on `apply`); any other mod in `~/.config/herdr-app` is neither backed up nor replaced. `apply` stages each copy beside the app folder before swapping it in, so the app never loads a partial mod, and runs `herdr-app check` on each mod when that command is installed.
+Both copy only the mods and files named in `sync.sh` (`mods`, `files`, plus copy-on-select and the Catppuccin themes on `apply`); any other mod in `~/.config/herdr-app` is neither backed up nor replaced. `apply` stages each copy beside the app folder before swapping it in, so the app never loads a partial mod. When `herdr-app` is installed, it checks every changed mod there with `herdr-app check` before any goes in; if one fails, it stops and nothing is installed.
 
 ## Before you apply
 
@@ -139,13 +139,23 @@ A **Push** button right of Commit sends HEAD to its upstream branch, showing how
 </details>
 
 <details>
-<summary><b><code>git-graph</code></b> · side panel, Git · <a href="https://github.com/rabeeh-ta/herdr-git-graph">rabeeh-ta/herdr-git-graph</a> at <code>2226f57</code> (v0.3.0), unchanged</summary>
+<summary><b><code>git-graph</code></b> · side panel, Git · <a href="https://github.com/rabeeh-ta/herdr-git-graph">rabeeh-ta/herdr-git-graph</a> at <code>2226f57</code> (v0.3.0), patched</summary>
 
-[rabeeh-ta/herdr-git-graph](https://github.com/rabeeh-ta/herdr-git-graph) at `2226f57` (v0.3.0), unchanged: a commit graph of the focused terminal's repository after VS Code's Git Graph (colored lanes, branch/remote/tag labels, an uncommitted row, commit details and diffs; double-click a branch to check it out, right-click for checkout, merge, rebase, cherry pick, revert, reset, tag, branch, push, commit and stash, each asking first in a dialog), and in a folder of repositories (a workbranch wrapper) a Manygit list of them with branch, uncommitted count and ahead/behind. Opened from the tab bar's **Git** button into the side panel's `graph` block.
+**Markers:** `review fixes`
+
+[rabeeh-ta/herdr-git-graph](https://github.com/rabeeh-ta/herdr-git-graph) at `2226f57` (v0.3.0): a commit graph of the focused terminal's repository after VS Code's Git Graph (colored lanes, branch/remote/tag labels, an uncommitted row, commit details and diffs; double-click a branch to check it out, right-click for checkout, merge, rebase, cherry pick, revert, reset, tag, branch, push, commit and stash, each asking first in a dialog), and in a folder of repositories (a workbranch wrapper) a Manygit list of them with branch, uncommitted count and ahead/behind. Opened from the tab bar's **Git** button into the side panel's `graph` block.
+
+Patched with six fixes from this repo's review (marked `review fixes`):
+- Non-ASCII file names stay raw (`core.quotePath=false` in `READ`), so their diffs open.
+- A new, untracked file's diff shows its contents.
+- A `git add` refreshes the uncommitted row, and with it the Commit dialog's "Stage every change" default.
+- Fetch, pull and push from the menus run with prompts off, like its background fetch.
+- A dialog stays open while its action runs.
+- The menu's first item can't be started twice.
 
 It runs `git`, and for Manygit `find` and `env`; git reaches the network only on Fetch, Fetch all, Pull, Push or deleting a remote branch, and the mod itself asks GitHub's public releases API once a day for a newer release (**Stop checking** in its update window, or `CHECK = false` in `update.js`, turns that off). Herdr stops a command after 30 s, so a slow fetch or push can fail there.
 
-MIT ([`LICENSE-herdr-git-graph`](LICENSE-herdr-git-graph)); its icons follow Lucide, ISC (`mods/git-graph/icons/LICENSE-lucide.txt`). To update it, copy `mods/git-graph/` from that repo again: nothing here patches it.
+MIT ([`LICENSE-herdr-git-graph`](LICENSE-herdr-git-graph)); its icons follow Lucide, ISC (`mods/git-graph/icons/LICENSE-lucide.txt`). To update it, copy `mods/git-graph/` from that repo again, then re-apply the `review fixes` lines that the new release doesn't already cover.
 
 </details>
 

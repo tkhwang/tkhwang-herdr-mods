@@ -4,7 +4,9 @@
 
 // Reads write nothing under .git (no index refresh or lock, no fsmonitor
 // cookie), so the folder watch never wakes for the panel's own reads.
-export const READ = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "diff.autoRefreshIndex=false"];
+// review fixes: core.quotePath=false keeps a non-ASCII name raw in --name-status and
+// --numstat, as -z output and the diff after "--" have it.
+export const READ = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "diff.autoRefreshIndex=false", "-c", "core.quotePath=false"];
 export const STATUS = ["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all"];
 export const UNCOMMITTED = "*";
 // Git's pretty fields are NUL-free strings; -z terminates each seven-field record.
@@ -380,7 +382,8 @@ export function fileArgs(commit) {
   return { status: [...base, "--name-status"], numstat: [...base, "--numstat"] };
 }
 
-export function joinFiles(statusText, numstatText) {
+// review fixes: `untracked` (paths) marks those files, so a diff opens them as new.
+export function joinFiles(statusText, numstatText, untracked = new Set()) {
   const stats = new Map();
   for (const line of numstatText.split("\n").filter(Boolean)) {
     const [a, d, ...path] = line.split("\t");
@@ -388,7 +391,7 @@ export function joinFiles(statusText, numstatText) {
   }
   return statusText.split("\n").filter(Boolean).map((line) => {
     const [s, ...path] = line.split("\t"), p = path.join("\t");
-    return { path: p, status: s[0], ...(stats.get(p) ?? { add: 0, del: 0 }) };
+    return { path: p, status: s[0], ...(untracked.has(p) ? { untracked: true } : {}), ...(stats.get(p) ?? { add: 0, del: 0 }) };
   });
 }
 

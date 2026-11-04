@@ -37,6 +37,8 @@ const pad2 = (n) => String(n).padStart(2, "0");
 const laneColors = (t) => [t.ansi4, t.ansi2, t.ansi5, t.ansi3, t.ansi6, t.ansi1, t.ansi12, t.ansi10, t.ansi13, t.ansi11, t.ansi14, t.ansi9];
 const isRefChange = (p) => /\/(HEAD|packed-refs)$|\/refs\//.test(p);
 const inGitDir = (p) => p.includes("/.git/") || p.endsWith("/.git");
+// review fixes: `git add` writes only the index. The panel's own reads leave it alone (READ).
+const isIndex = (p) => /\/index$/.test(p);
 
 function ago(seconds) {
   const s = Date.now() / 1000 - seconds;
@@ -56,7 +58,8 @@ function stamp(seconds) {
 const tilde = (path, on) => (!on && path?.startsWith(home()) ? "~" + path.slice(home().length) : path);
 const brief = (c) => ({ hash: c.hash, subject: c.subject, parents: c.parents });
 const count = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
-const sameFiles = (a, b) => a.length === b.length && a.every((f, i) => f.path === b[i].path && f.status === b[i].status);
+// review fixes: staged counts too, so a `git add` redraws the row and the Commit menu's default.
+const sameFiles = (a, b) => a.length === b.length && a.every((f, i) => f.path === b[i].path && f.status === b[i].status && f.staged === b[i].staged);
 const scopeOf = ({ all, remotes }) => `${all} ${remotes}`;
 // Folders kept as they were last read, and commits' details (a commit never changes).
 const SEEN = 24, DETAILS = 200;
@@ -369,7 +372,7 @@ export class Graph {
           const paths = (await watchFolder(dir)).map((p) => p.replace(/\\/g, "/"));
           if (token !== this.watchToken) return;
           if (paths.some((p) => (gitDir || inGitDir(p)) && isRefChange(p))) this.refresh(cx, true);
-          else if (paths.some((p) => !gitDir && !inGitDir(p))) this.statusSoon(cx);
+          else if (paths.some((p) => !(gitDir || inGitDir(p)) || isIndex(p))) this.statusSoon(cx); // review fixes
         }
       } catch { if (token === this.watchToken) this.watching = null; }
     });
@@ -507,7 +510,8 @@ export class Graph {
         let details;
         if (commit.uncommitted) {
           const numstat = this.head ? await git(["diff", "--no-renames", "--no-ext-diff", "--numstat", "HEAD"]) : { stdout: "" };
-          const stats = joinFiles(this.files.map((f) => `${f.status}\t${f.path}`).join("\n"), numstat.stdout);
+          const untracked = new Set(this.files.filter((f) => f.untracked).map((f) => f.path)); // review fixes
+          const stats = joinFiles(this.files.map((f) => `${f.status}\t${f.path}`).join("\n"), numstat.stdout, untracked);
           details = { files: stats.slice(0, 500), more: Math.max(0, stats.length - 500) };
         } else {
           const args = fileArgs(commit);

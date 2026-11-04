@@ -12,7 +12,7 @@
 # replaces to ~/.config/herdr-app.bak-<time>-<pid>/ (outside the app folder, so the app never
 # loads a backup as a mod) and the copy into place. It installs copy-on-select and the Catppuccin
 # themes from their own repos at pinned commits (they have no license, so they aren't copied
-# here), and checks each mod. The app sees
+# here), and runs `herdr-app check` on every changed mod before any goes in. The app sees
 # a new mod folder only when it starts, so restart Herdr after a first apply, then pick the
 # layout with ⌘⇧L or `herdr-app do layout.switch '{"name":"main-dev"}'`.
 set -euo pipefail
@@ -23,7 +23,7 @@ live="${HERDR_APP_HOME:-$HOME/.config/herdr-app}"
 # Mods kept here, each with a small patch: clones of Herdr's own mods (Apache-2.0, see
 # LICENSE-herdr), and better-changes and better-spaces from munza/herdr-mods (Apache-2.0, see
 # LICENSE-herdr-mods and NOTICE-herdr-mods), herdr-open-with-zed from atleugim/herdr-open-with-zed
-# (Apache-2.0, see LICENSE-herdr-open-with-zed), git-graph from rabeeh-ta/herdr-git-graph, unpatched
+# (Apache-2.0, see LICENSE-herdr-open-with-zed), git-graph from rabeeh-ta/herdr-git-graph (lines marked "review fixes")
 # (MIT, see LICENSE-herdr-git-graph; its icons follow Lucide, ISC, see mods/git-graph/icons/LICENSE-lucide.txt),
 # and markdown-browser from ohneda/herdr-markdown-browser (MIT, see LICENSE-herdr-markdown-browser), whose
 # mod.json "place" is "none" here.
@@ -86,14 +86,38 @@ apply() {
   # Copies are staged beside the app folder, not in it, so the app never loads a partial mod.
   stage="$(mktemp -d "$live.new-XXXXXX")"
   trap 'rm -rf "$stage"' EXIT
+  # Every changed mod is staged and checked before any goes in, so one the check rejects
+  # leaves the app folder as it was.
+  local changed=""
   for m in $mods; do
     if [ -d "$live/mods/$m" ]; then
       diff -rq -x '*.d.ts' -x jsconfig.json "$here/mods/$m" "$live/mods/$m" >/dev/null 2>&1 && { echo "same: mods/$m"; continue; }
     fi
     mkdir -p "$stage/mods"
     rsync -a "$here/mods/$m/" "$stage/mods/$m/"
+    changed="$changed $m"
+  done
+  # copy-on-select counts as installed only with both files and `.revision` naming the
+  # pinned commit. `.revision` moves in with the files, so a failed install never has it.
+  if [ -f "$cos/main.js" ] && [ -f "$cos/mod.json" ] && [ "$(cat "$cos/.revision" 2>/dev/null)" = "$cos_sha" ]; then
+    echo "same: mods/copy-on-select"
+  else
+    mkdir -p "$stage/mods/copy-on-select"
+    for f in main.js mod.json; do
+      curl -fsSL "https://raw.githubusercontent.com/$cos_repo/$cos_sha/mods/copy-on-select/$f" -o "$stage/mods/copy-on-select/$f" ||
+        die "could not fetch copy-on-select/$f from $cos_repo"
+    done
+    echo "$cos_sha" >"$stage/mods/copy-on-select/.revision"
+    changed="$changed copy-on-select"
+  fi
+  if command -v herdr-app >/dev/null 2>&1; then
+    for m in $changed; do
+      herdr-app check "$stage/mods/$m" || die "herdr-app check rejected mods/$m; nothing was installed"
+    done
+  fi
+  for m in $changed; do
     swap "mods/$m"
-    echo "installed mods/$m"
+    if [ "$m" = copy-on-select ]; then echo "installed mods/$m ($cos_repo@${cos_sha:0:7})"; else echo "installed mods/$m"; fi
   done
   # Themes go in before the layout, so it never names a missing one.
   local entry name sum
@@ -119,23 +143,6 @@ apply() {
     swap "$f"
     echo "installed $f"
   done
-  # copy-on-select counts as installed only with both files and `.revision` naming the
-  # pinned commit. `.revision` moves in with the files, so a failed install never has it.
-  if [ -f "$cos/main.js" ] && [ -f "$cos/mod.json" ] && [ "$(cat "$cos/.revision" 2>/dev/null)" = "$cos_sha" ]; then
-    echo "same: mods/copy-on-select"
-  else
-    mkdir -p "$stage/mods/copy-on-select"
-    for f in main.js mod.json; do
-      curl -fsSL "https://raw.githubusercontent.com/$cos_repo/$cos_sha/mods/copy-on-select/$f" -o "$stage/mods/copy-on-select/$f" ||
-        die "could not fetch copy-on-select/$f from $cos_repo"
-    done
-    echo "$cos_sha" >"$stage/mods/copy-on-select/.revision"
-    swap mods/copy-on-select
-    echo "installed mods/copy-on-select ($cos_repo@${cos_sha:0:7})"
-  fi
-  if command -v herdr-app >/dev/null 2>&1; then
-    for m in $mods copy-on-select; do herdr-app check "$live/mods/$m"; done
-  fi
   echo "restart Herdr if a mod folder was new, then switch to the main-dev layout (⌘⇧L)"
 }
 

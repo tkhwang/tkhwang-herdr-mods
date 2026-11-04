@@ -1,9 +1,16 @@
 // Action execution is separate from the UI so context checks can be tested
 // against disposable repositories. exec has Herdr's (program, argv, options) shape.
 import { READ, commandsFor, gitError } from "./git.js";
+import { NO_PROMPT } from "./repos.js";
+
+// review fixes: commands that reach a remote run as the background fetch does, so a
+// repository that needs a login fails at once instead of waiting on a prompt.
+const REMOTE = new Set(["fetch", "pull", "push"]);
 
 export async function executeAction(action, values, ctx, exec) {
-  const git = (args) => exec("git", args, { cwd: ctx.root, on: ctx.on });
+  const git = (args) => REMOTE.has(args[0])
+    ? exec("env", [...NO_PROMPT, "git", ...args], { cwd: ctx.root, on: ctx.on })
+    : exec("git", args, { cwd: ctx.root, on: ctx.on });
   const commands = commandsFor(action, values, ctx);
   // A dialog/menu describes this snapshot, not whatever HEAD happens to be
   // when the user confirms it. Fetch does not operate on the current branch.

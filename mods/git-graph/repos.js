@@ -70,7 +70,9 @@ export function parseRepoStatus(stdout) {
 // A background fetch, as manygit runs it: saved credentials and SSH's own
 // configuration still work, but nothing may stop to ask for a login. Git tries
 // askpass before GIT_TERMINAL_PROMPT, so an empty GIT_ASKPASS goes with it.
-export const FETCH = ["GCM_INTERACTIVE=0", "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=", "git", "fetch", "--quiet"];
+// review fixes: NO_PROMPT is shared with the menu's fetch, pull and push (execute.js).
+export const NO_PROMPT = ["GCM_INTERACTIVE=0", "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS="];
+export const FETCH = [...NO_PROMPT, "git", "fetch", "--quiet"];
 // Worth fetching: a repository that has a remote, or isn't read yet.
 export const fetchable = (st) => !st || st.error || Boolean(st.upstream || st.hasRemote);
 

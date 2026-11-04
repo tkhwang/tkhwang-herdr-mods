@@ -46,6 +46,12 @@ export class Dialog {
     cx.notify();
   }
 
+  // review fixes: closing cancels the running task, which could stop between `git add --all`
+  // and `git commit`, so Esc and Cancel wait until the action is done.
+  cancel() {
+    if (!this.busy) closeOverlay(props().overlay);
+  }
+
   danger() {
     const choice = this.spec.choice;
     return Boolean(this.spec.danger || choice?.options.find((o) => o.value === this.values[choice.id])?.danger);
@@ -60,7 +66,7 @@ export class Dialog {
       .hover((st) => st.opacity(0.88)).on_click(action).child(text);
     return v_flex().id("git-graph-dialog").track_focus(this.handle).size_full().min_h(0).p(18).bg(t.popover).text_color(t.foreground).text_size(12.8)
       .on_key_down((e, cx) => {
-        if (e.key === "escape") closeOverlay(props().overlay);
+        if (e.key === "escape") this.cancel();
         else if (e.key === "enter" && this.focusedInput < 0) this.confirm(cx);
         else return;
         cx.stop_propagation();
@@ -91,7 +97,7 @@ export class Dialog {
       .when(Boolean(this.error), (el) => el.child(div().pt(12).text_size(12).text_color(t.ansi1).child(this.error)))
       .child(div().flex_1())
       .child(h_flex().pt(16).gap(8).justify_end()
-        .child(button("gd-cancel", "Cancel", false, () => closeOverlay(props().overlay)))
+        .child(button("gd-cancel", "Cancel", false, () => this.cancel()))
         .child(button("gd-ok", this.busy ? "Working…" : s.confirm, true, (_e, cx) => this.confirm(cx))));
   }
 }
