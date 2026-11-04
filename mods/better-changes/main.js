@@ -1,7 +1,7 @@
 // Changed from munza/herdr-mods@77d94f7: a repo picker for workbranch wrapper folders
 // (code marked "wrapper repos"), a multi-line commit message box with the buttons under it
 // (marked "commit box"), a button that asks an AI for the commit message (marked "ai message"),
-// the folder kept while the tab bar's Markdown viewer tab is shown (marked "markdown tab", with
+// a Push button beside Commit (marked "push button"), the folder kept while the tab bar's Markdown viewer tab is shown (marked "markdown tab", with
 // markdown.js), and mod.json "place" is "none" (it sits in the Changes slot).
 // Sidebar status/commit controls and a reusable diff-tab view share this class.
 // Pure Git-output parsing and diff-row transformations live in model.js.
@@ -316,6 +316,7 @@ export default class Changes extends View {
       this.note = null;
       this.watched = null;
       this.branch = null;
+      this.pushTo = null; // push button
       this.message = "";
       this.input.set_value("");
     }
@@ -378,9 +379,11 @@ export default class Changes extends View {
           branch = b.code === 0 ? b.stdout.trim() || null : null;
           choices = await this.childRepos(spot.wrapper.cwd, spot.wrapper.on);
         }
+        const pushTo = this.mode === "sidebar" && hasHead ? await this.pushTarget(git) : null; // push button
         if (context !== this.contextKey()) return;
         if (choices?.length) spot.wrapper.choices = choices;
         this.branch = branch;
+        this.pushTo = pushTo; // push button
         const files = changedFiles(
           status.stdout,
           stats.map((r) => r.stdout),
@@ -411,6 +414,35 @@ export default class Changes extends View {
         if (this.contextKey() !== this.context) this.refresh(cx);
       }
     });
+  }
+
+  // push button: where Push sends HEAD. With an upstream branch on a remote, HEAD goes to that
+  // branch, and the counts say how far it is ahead and behind as of the last fetch. Without one
+  // (or with one that is gone), the branch goes to its remote, else origin, else the only remote,
+  // under its own name, and is tracked from then on. Null on a detached HEAD.
+  async pushTarget(git) {
+    const head = await git(["symbolic-ref", "-q", "--short", "HEAD"]);
+    if (head.code !== 0) return null;
+    const branch = head.stdout.trim();
+    const up = await git([
+      "for-each-ref",
+      "--format=%(upstream:remotename)%00%(upstream:remoteref)%00%(upstream:short)",
+      `refs/heads/${branch}`,
+    ]);
+    const [remote = "", ref = "", name = ""] = up.code === 0 ? up.stdout.replace(/\n$/, "").split("\0") : [];
+    // An upstream that is another local branch: pushing would move that branch, so no Push.
+    if (remote === ".") return { branch, local: name || ref };
+    if (remote && ref) {
+      const counts = await git(["rev-list", "--count", "--left-right", "@{upstream}...HEAD"]);
+      if (counts.code === 0) {
+        const [behind, ahead] = counts.stdout.trim().split(/\s+/).map(Number);
+        return { branch, remote, ref, name, ahead, behind, tracked: true };
+      }
+    }
+    const remotes = await git(["remote"]);
+    const names = remotes.code === 0 ? remotes.stdout.split("\n").map((s) => s.trim()).filter(Boolean) : [];
+    const to = names.includes(remote) ? remote : names.includes("origin") ? "origin" : names.length === 1 ? names[0] : null;
+    return { branch, remote: to, tracked: false };
   }
 
   watch(root, cx) {
@@ -715,6 +747,65 @@ export default class Changes extends View {
         cx.notify();
       }
     });
+  }
+
+  // push button: send HEAD to its upstream branch, or put the branch on its remote and track it.
+  // Never forced: a rejected push (the remote moved on since the last fetch) shows git's reason
+  // as a note. Busy meanwhile, like a commit; Herdr stops it after 30 s.
+  canPush() {
+    const p = this.pushTo;
+    return Boolean(
+      p?.remote &&
+      (!p.tracked || p.ahead > 0) &&
+      this.root &&
+      !this.loading &&
+      !this.busy &&
+      this.contextKey() === this.context &&
+      this.mode === "sidebar",
+    );
+  }
+
+  pushHead(cx) {
+    if (!this.canPush()) return;
+    const p = this.pushTo;
+    const root = this.root;
+    const on = this.on;
+    const context = this.context;
+    const args = p.tracked ? ["push", p.remote, `HEAD:${p.ref}`] : ["push", "-u", p.remote, "HEAD"];
+    this.busy = true;
+    this.operation = "push";
+    this.note = null;
+    cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        const result = await this.git(args, root, on);
+        if (result.code !== 0)
+          throw Error(
+            (result.stderr || result.stdout || `git push exited with ${result.code}`)
+              .split("\n")
+              .map((line) => line.trim())
+              .filter((line) => line && !line.startsWith("hint:"))
+              .slice(-2)
+              .join(" "),
+          );
+        const at = Date.now();
+        this.reload = at;
+        setShared("better-changes.reload", { root, on: on ?? null, at });
+      } catch (error) {
+        if (context === this.contextKey()) this.note = `Push failed: ${error.message}`;
+      } finally {
+        this.busy = false;
+        this.operation = null;
+        this.refresh(cx);
+        cx.notify();
+      }
+    });
+  }
+
+  // push button: where a push goes, for the tooltip and the footer line.
+  pushLabel() {
+    const p = this.pushTo;
+    return p?.tracked ? p.name : p?.remote ? `${p.remote}/${p.branch}` : "";
   }
 
   // ai message: ask AI_COMMAND for a message from the staged diff and the repository's recent
@@ -1197,6 +1288,60 @@ export default class Changes extends View {
       );
   }
 
+  // push button: right of Commit, at the edge, with how many commits HEAD is ahead. Solid (the next step) when
+  // there is something to push and nothing to commit.
+  renderPushButton(t, commitEnabled) {
+    const p = this.pushTo;
+    const pushing = this.operation === "push";
+    const enabled = this.canPush();
+    const solid = enabled && !commitEnabled;
+    const plural = (n) => `${n} commit${n === 1 ? "" : "s"}`;
+    const tip = pushing
+      ? `Pushing to ${this.pushLabel()}…`
+      : !this.root
+        ? "Not a Git repository"
+        : !this.hasHead
+          ? "Nothing to push before the first commit"
+          : !p
+            ? "Check out a branch to push"
+            : p.local
+              ? `The upstream is the local branch ${p.local}: push from a terminal`
+              : !p.remote
+                ? "No remote to push to"
+                : !p.tracked
+                  ? `Push ${p.branch} to ${p.remote} and track it`
+                  : p.ahead
+                    ? `Push ${plural(p.ahead)} to ${p.name}` +
+                      (p.behind ? ` (${p.name} has ${plural(p.behind)} you don't: pull first if it's rejected)` : "")
+                    : `Nothing to push: ${p.branch} is not ahead of ${p.name} (as of the last fetch)`;
+    return div()
+      .id("changes-push")
+      .tooltip(tip)
+      .h(28)
+      .px(8)
+      .flex()
+      .gap(5)
+      .items_center()
+      .rounded(5)
+      .border_1()
+      .border_color(pushing ? t.accent : t.border)
+      .bg(solid ? t.solid : pushing ? t.selected : t.raised)
+      .text_color(solid ? t.solid_foreground : enabled || pushing ? t.foreground : t.dim)
+      .text_size(em(0.85))
+      .when(enabled, (el) =>
+        el
+          .cursor_pointer()
+          .when(!solid, (s) => s.hover((h) => h.bg(t.hover)))
+          .on_click((_e, cx) => this.pushHead(cx)),
+      )
+      .child(
+        pushing
+          ? svg("mods/workspace-chrome/spinner.svg").size(14).text_color(t.accent).spin(900)
+          : svg("mods/better-changes/push.svg").size(14),
+      )
+      .child(pushing ? "Pushing…" : p?.tracked && p.ahead ? `Push ↑${p.ahead}` : "Push");
+  }
+
   renderCommitFooter(t, repo = null) {
     const enabled = Boolean(
       this.message.trim() &&
@@ -1229,7 +1374,7 @@ export default class Changes extends View {
           .gap(6)
           .items_center()
           .child(this.renderAiButton(t)) // ai message
-          .child(div().flex_1()) // commit box: the buttons under the box, Commit at the right edge
+          .child(div().flex_1()) // commit box: the buttons under the box, at the right edge (push button: Commit, then Push)
           .child(
             div()
               .id("changes-commit")
@@ -1248,7 +1393,8 @@ export default class Changes extends View {
               .when(enabled, (el) => el.cursor_pointer().on_click((_e, cx) => this.commit(cx)))
               .child(svg("mods/better-changes/commit.svg").size(14))
               .child(this.operation === "commit" ? "Committing…" : "Commit staged"),
-          ),
+          )
+          .child(this.renderPushButton(t, enabled)), // push button
       )
       .child(
         div()
@@ -1257,7 +1403,9 @@ export default class Changes extends View {
           .child(
             this.operation === "ai"
               ? "Writing a commit message from the staged changes…" // ai message
-              : this.total > MAX_FILES
+              : this.operation === "push"
+                ? `Pushing to ${this.pushLabel()}…` // push button
+                : this.total > MAX_FILES
                 ? "First 1,000 files shown"
                 : this.conflicts
                   ? "Resolve conflicts and stage the files before committing"

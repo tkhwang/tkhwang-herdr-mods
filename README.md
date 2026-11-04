@@ -23,7 +23,7 @@ After a first `apply`, restart Herdr (it sees new mod folders at start) and pick
 | **Tab bar**<br>`tabs-dev` | yellow agent tabs, wider tabs, **Git** and **Markdown** buttons, a 3 \| 2 column switch |
 | **`+` menu**<br>`herdr-open-with-zed` | **Open with Zed** for the focused terminal's folder |
 | **Side panel, Files**<br>`files-dev` | the previewed file feeds the **Markdown** button |
-| **Side panel, Changes**<br>`better-changes` | staged/unstaged groups, diffs, a repo picker in workbranch wrappers, AI commit messages |
+| **Side panel, Changes**<br>`better-changes` | staged/unstaged groups, diffs, a repo picker in workbranch wrappers, AI commit messages, a Push button |
 | **Side panel, Git**<br>`git-graph` | a commit graph, or a Manygit list in a folder of repos |
 | **Center tab**<br>`markdown-browser` | a Markdown preview of the picked file |
 | **Terminal**<br>copy-on-select | copies a selection on mouse release |
@@ -48,7 +48,7 @@ Both copy only the mods and files named in `sync.sh` (`mods`, `files`, plus copy
 
 ## Before you apply
 
-- **What runs, and what reaches the network.** `better-spaces` runs `git`, `hc` and `gh` (GitHub with your local `gh` login). The sparkle button in `better-changes` runs `claude -p`, so the staged diff goes to Anthropic through your Claude Code login. `git-graph` reaches the network only on Fetch, Pull, Push or deleting a remote branch, and asks GitHub's releases API once a day for a newer release. `markdown-browser` uses no network.
+- **What runs, and what reaches the network.** `better-spaces` runs `git`, `hc` and `gh` (GitHub with your local `gh` login). The sparkle button in `better-changes` runs `claude -p`, so the staged diff goes to Anthropic through your Claude Code login, and its Push button runs `git push` with your git credentials. `git-graph` reaches the network only on Fetch, Pull, Push or deleting a remote branch, and asks GitHub's releases API once a day for a newer release. `markdown-browser` uses no network.
 - **Workbranch wrappers.** In a folder of repos that is not a repo itself, `better-changes` and `changes-dev` show a repo picker, `git-graph` shows a Manygit list, and `better-spaces` shows no branch or PR.
 - **Theme picks.** A theme picked in Settings > Look is kept per layout in `layouts/.state/`; pick the Catppuccin themes there again if one was picked before.
 - **Command time limit.** Herdr stops a command after 30 s, so a slow fetch or push in `git-graph` can fail.
@@ -126,11 +126,13 @@ Clone of the shipped Files panel (0.1.12). It publishes the file its preview sho
 <details>
 <summary><b><code>better-changes</code></b> · side panel, Changes · <a href="https://github.com/munza/herdr-mods/tree/main/better-changes">munza/herdr-mods</a> at <code>77d94f7</code>, patched</summary>
 
-**Markers:** `wrapper repos`, `commit box`, `ai message`, `markdown tab`
+**Markers:** `wrapper repos`, `commit box`, `ai message`, `push button`, `markdown tab`
 
 [munza/herdr-mods](https://github.com/munza/herdr-mods/tree/main/better-changes) at `77d94f7` (staged/unstaged groups with stage buttons, tree/flat list, inline/side-by-side diff in one reusable tab), in the Changes slot. Patched with the same `wrapper repos` repo picker (it commits staged changes of the picked repo only), and `mod.json` `place` is `none` so it doesn't also dock a second right sidebar. The commit message is a text area (3 to 8 rows) with the buttons under it (marked `commit box`).
 
 A sparkle button beside Commit asks an AI for the message from the staged diff and the last 8 commit messages, keeping the repo's prefix form and language (marked `ai message`; `sparkle.svg`, `AI_COMMAND` and `AI_EXAMPLES` at the top of `main.js`, `aiPrompt` and `aiMessage` in `model.js`): it runs `claude -p` with no tools and the `sonnet` model, so the staged diff goes to Anthropic through your Claude Code login; change `AI_COMMAND` for codex or grok.
+
+A **Push** button right of Commit sends HEAD to its upstream branch, showing how many commits it is ahead as of the last fetch (`Push ↑2`); a branch with no upstream goes to its remote (else `origin`, else the only remote) under its own name and is tracked from then on (marked `push button`; `push.svg`, `pushTarget` and `pushHead` in `main.js`). It turns solid when there is something to push and nothing staged to commit. It never forces: a push the remote rejects shows git's reason as a note. It is off on a detached HEAD, with no remote, or when the upstream is another local branch. It runs `git push` with your git credentials, and Herdr stops it after 30 s like any command.
 
 `markdown.js` (marked `markdown tab`, the same file as in `tabs-dev`) keeps the panel on the repo it was on while the Markdown viewer tab is shown. `changes-dev` stays installed: put it back in the layout's `changes` block to switch.
 
