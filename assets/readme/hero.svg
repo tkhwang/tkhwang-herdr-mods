@@ -1,0 +1,189 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">tkhwang-herdr-mods: my Herdr app window, kept as files</title>
+  <desc id="desc">Schematic of the Herdr app window that layouts/main-dev.json builds, in the Catppuccin Mocha theme. Each block carries a tag naming the mod in this repo that fills it: better-spaces and agents-dev in the sidebar, tabs-dev as the tab bar, and git-graph, better-changes and files-dev stacked in the side panel. The center pane is a terminal running ./sync.sh apply.</desc>
+
+  <defs>
+    <style>
+      .m { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
+      .s { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    </style>
+    <clipPath id="win"><rect x="48" y="196" width="1104" height="492" rx="14"/></clipPath>
+  </defs>
+
+  <rect width="1200" height="720" rx="24" fill="#11111b"/>
+
+  <!-- Title -->
+  <g id="title-block">
+    <text class="m" x="56" y="64" font-size="18" fill="#60b9fc" letter-spacing="2">HERDR APP · ~/.config/herdr-app</text>
+    <text class="m" x="54" y="122" font-size="54" font-weight="700" fill="#cdd6f4">tkhwang-herdr-mods</text>
+    <text class="s" x="56" y="164" font-size="22" fill="#a6adc8">My Herdr window, kept as files: a layout, patched mods, one sync script.</text>
+  </g>
+
+  <!-- The window is the layout file: its tag sits on the frame like a file tab -->
+  <path d="M862 196 V168 Q862 160 870 160 H1130 Q1138 160 1138 168 V196 Z" fill="#60b9fc"/>
+  <text class="m" x="874" y="185" font-size="20" font-weight="700" fill="#14151c">layouts/main-dev.json</text>
+
+  <!-- Window surfaces -->
+  <g clip-path="url(#win)">
+    <rect x="48" y="196" width="1104" height="492" fill="#1e2b43"/>
+    <rect x="48" y="196" width="270" height="492" fill="#1e2336"/>
+    <rect x="318" y="196" width="834" height="42" fill="#1a1f33"/>
+    <rect x="318" y="660" width="834" height="28" fill="#1a1f33"/>
+  </g>
+  <g stroke="#ffffff" stroke-opacity="0.14" fill="none">
+    <rect x="48.5" y="196.5" width="1103" height="491" rx="14"/>
+    <line x1="318" y1="196" x2="318" y2="688"/>
+    <line x1="318" y1="238" x2="1152" y2="238"/>
+    <line x1="318" y1="660" x2="1152" y2="660"/>
+  </g>
+  <g id="traffic-lights" fill-opacity="0.9">
+    <circle cx="72" cy="219" r="6.5" fill="#f38ba8"/>
+    <circle cx="94" cy="219" r="6.5" fill="#f9e2af"/>
+    <circle cx="116" cy="219" r="6.5" fill="#a6e3a1"/>
+  </g>
+
+  <!-- Spaces block: better-spaces -->
+  <g id="spaces">
+    <rect x="58" y="250" width="250" height="210" rx="8" fill="#60b9fc" fill-opacity="0.04" stroke="#60b9fc" stroke-width="1.5" stroke-dasharray="6 5"/>
+    <rect x="58" y="250" width="182" height="30" rx="6" fill="#60b9fc"/>
+    <text class="m" x="70" y="271" font-size="20" font-weight="700" fill="#14151c">better-spaces</text>
+
+    <!-- current space: cyan tint and bar -->
+    <rect x="66" y="292" width="234" height="58" rx="8" fill="#22d3ee" fill-opacity="0.14"/>
+    <rect x="66" y="292" width="4" height="58" rx="2" fill="#22d3ee"/>
+    <rect x="80" y="302" width="24" height="24" rx="6" fill="#8b7cf6"/>
+    <text class="m" x="92" y="319" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">H</text>
+    <text class="m" x="114" y="320" font-size="18" font-weight="700" fill="#cdd6f4">herdr-mods</text>
+    <text class="m" x="292" y="320" font-size="16" fill="#a6adc8" text-anchor="end">main</text>
+    <text class="m" x="114" y="342" font-size="15" fill="#7f849c">fe:3011 · be:5010</text>
+
+    <!-- done glow -->
+    <rect x="66" y="358" width="234" height="40" rx="8" fill="#22c55e" fill-opacity="0.10" stroke="#22c55e" stroke-width="1.5"/>
+    <rect x="80" y="366" width="24" height="24" rx="6" fill="#22a99a"/>
+    <text class="m" x="92" y="383" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">A</text>
+    <text class="m" x="114" y="384" font-size="18" fill="#cdd6f4">api</text>
+    <text class="m" x="292" y="384" font-size="16" fill="#a6adc8" text-anchor="end">fix/login</text>
+
+    <!-- blocked glow -->
+    <rect x="66" y="406" width="234" height="40" rx="8" fill="#f59e0b" fill-opacity="0.10" stroke="#f59e0b" stroke-width="1.5"/>
+    <rect x="80" y="414" width="24" height="24" rx="6" fill="#e3814f"/>
+    <text class="m" x="92" y="431" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">W</text>
+    <text class="m" x="114" y="432" font-size="18" fill="#cdd6f4">web</text>
+    <text class="m" x="292" y="432" font-size="16" fill="#a6adc8" text-anchor="end">main</text>
+  </g>
+
+  <!-- Agents block: agents-dev -->
+  <g id="agents">
+    <rect x="58" y="470" width="250" height="146" rx="8" fill="#60b9fc" fill-opacity="0.04" stroke="#60b9fc" stroke-width="1.5" stroke-dasharray="6 5"/>
+    <rect x="58" y="470" width="144" height="30" rx="6" fill="#60b9fc"/>
+    <text class="m" x="70" y="491" font-size="20" font-weight="700" fill="#14151c">agents-dev</text>
+
+    <!-- space header -->
+    <rect x="66" y="510" width="22" height="22" rx="5" fill="#8b7cf6"/>
+    <text class="m" x="77" y="526" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">H</text>
+    <text class="m" x="96" y="527" font-size="17" font-weight="700" fill="#cdd6f4">herdr-mods</text>
+    <text class="m" x="300" y="527" font-size="15" fill="#7f849c" text-anchor="end">main</text>
+    <line x1="66" y1="541" x2="300" y2="541" stroke="#cdd6f4" stroke-opacity="0.12"/>
+
+    <!-- nested agent rows: working contour, done glow -->
+    <rect x="88" y="548" width="212" height="28" rx="7" fill="none" stroke="#cdd6f4" stroke-opacity="0.45" stroke-width="1.5"/>
+    <text class="m" x="100" y="567" font-size="16" fill="#cdd6f4">claude</text>
+    <text class="m" x="290" y="567" font-size="15" fill="#7f849c" text-anchor="end">2m</text>
+    <rect x="88" y="582" width="212" height="28" rx="7" fill="#22c55e" fill-opacity="0.10" stroke="#22c55e" stroke-width="1.5"/>
+    <text class="m" x="100" y="601" font-size="16" fill="#cdd6f4">codex</text>
+    <text class="m" x="290" y="601" font-size="15" fill="#7f849c" text-anchor="end">12m</text>
+  </g>
+
+  <!-- Tab bar: tabs-dev -->
+  <g id="tabs">
+    <rect x="328" y="204" width="150" height="28" rx="7" fill="#facc15" fill-opacity="0.16" stroke="#facc15" stroke-opacity="0.7"/>
+    <text class="m" x="340" y="223" font-size="16" fill="#facc15">claude</text>
+    <circle cx="446" cy="218" r="3.5" fill="#facc15"/>
+    <text class="m" x="464" y="223" font-size="15" fill="#a6adc8" text-anchor="middle">×</text>
+
+    <rect x="486" y="204" width="120" height="28" rx="7" fill="none" stroke="#cdd6f4" stroke-opacity="0.25"/>
+    <text class="m" x="498" y="223" font-size="16" fill="#a6adc8">zsh</text>
+    <text class="m" x="592" y="223" font-size="15" fill="#7f849c" text-anchor="middle">×</text>
+
+    <rect x="620" y="205" width="120" height="28" rx="6" fill="#60b9fc"/>
+    <text class="m" x="632" y="225" font-size="20" font-weight="700" fill="#14151c">tabs-dev</text>
+
+    <!-- + menu, then the 3 | 2 column switch, then the panel buttons -->
+    <text class="m" x="790" y="225" font-size="20" fill="#a6adc8" text-anchor="middle">+</text>
+
+    <rect x="812" y="206" width="48" height="25" rx="6" fill="none" stroke="#cdd6f4" stroke-opacity="0.25"/>
+    <rect x="812" y="206" width="24" height="25" rx="6" fill="#60b9fc" fill-opacity="0.18"/>
+    <line x1="836" y1="206" x2="836" y2="231" stroke="#cdd6f4" stroke-opacity="0.25"/>
+    <g fill="#60b9fc"><rect x="817" y="212" width="3" height="13" rx="1"/><rect x="822.5" y="212" width="3" height="13" rx="1"/><rect x="828" y="212" width="3" height="13" rx="1"/></g>
+    <g fill="#a6adc8"><rect x="841" y="212" width="6" height="13" rx="1"/><rect x="849" y="212" width="6" height="13" rx="1"/></g>
+
+    <text class="m" x="918" y="223" font-size="16" fill="#a6adc8" text-anchor="end">Files</text>
+    <text class="m" x="998" y="223" font-size="16" fill="#a6adc8" text-anchor="end">Changes</text>
+    <rect x="1010" y="206" width="45" height="25" rx="6" fill="#60b9fc" fill-opacity="0.18"/>
+    <text class="m" x="1047" y="223" font-size="16" fill="#60b9fc" text-anchor="end">Git</text>
+    <text class="m" x="1140" y="223" font-size="16" fill="#7f849c" text-anchor="end">Markdown</text>
+  </g>
+
+  <!-- Center pane: the active tab, a terminal -->
+  <g id="main-pane">
+    <rect x="326" y="246" width="484" height="406" rx="10" fill="#181825" stroke="#60b9fc"/>
+    <text class="m" x="342" y="267" font-size="15" fill="#7f849c">zsh · ~/tkhwang-herdr-mods</text>
+    <line x1="326" y1="277" x2="810" y2="277" stroke="#cdd6f4" stroke-opacity="0.08"/>
+    <g class="m" font-size="17">
+      <text x="342" y="308"><tspan fill="#60b9fc">$</tspan><tspan fill="#cdd6f4"> ./sync.sh apply</tspan></text>
+      <text x="342" y="336"><tspan fill="#a6e3a1">installed</tspan><tspan fill="#a6adc8"> mods/agents-dev</tspan></text>
+      <text x="342" y="362"><tspan fill="#a6e3a1">installed</tspan><tspan fill="#a6adc8"> mods/better-spaces</tspan></text>
+      <text x="342" y="388"><tspan fill="#a6e3a1">installed</tspan><tspan fill="#a6adc8"> mods/tabs-dev</tspan></text>
+      <text x="342" y="414" fill="#7f849c">same: mods/git-graph</text>
+      <text x="342" y="440" fill="#7f849c">same: themes/herdr-catppuccin.json</text>
+      <text x="342" y="466"><tspan fill="#a6e3a1">installed</tspan><tspan fill="#a6adc8"> layouts/main-dev.json</tspan></text>
+      <text x="342" y="500" fill="#cdd6f4">restart Herdr if a mod folder was new,</text>
+      <text x="342" y="526" fill="#cdd6f4">then switch to the main-dev layout (⌘⇧L)</text>
+      <text x="342" y="562" fill="#60b9fc">$</text>
+    </g>
+    <rect x="360" y="547" width="10" height="20" fill="#60b9fc"/>
+  </g>
+
+  <!-- Side panel: one stack, three mods -->
+  <g id="side-panel">
+    <rect x="818" y="246" width="326" height="406" rx="10" fill="#1a1d2d" stroke="#ffffff" stroke-opacity="0.12"/>
+    <rect x="830" y="253" width="121" height="26" rx="6" fill="none" stroke="#60b9fc" stroke-opacity="0.75"/>
+    <text class="m" x="842" y="271" font-size="18" fill="#60b9fc">files-dev</text>
+
+    <rect x="818" y="286" width="326" height="366" rx="10" fill="#1c1f31" stroke="#ffffff" stroke-opacity="0.12"/>
+    <rect x="830" y="293" width="175" height="26" rx="6" fill="none" stroke="#60b9fc" stroke-opacity="0.75"/>
+    <text class="m" x="842" y="311" font-size="18" fill="#60b9fc">better-changes</text>
+
+    <rect x="818" y="326" width="326" height="326" rx="10" fill="#181825" stroke="#ffffff" stroke-opacity="0.14"/>
+    <rect x="830" y="336" width="132" height="30" rx="6" fill="#60b9fc"/>
+    <text class="m" x="842" y="357" font-size="20" font-weight="700" fill="#14151c">git-graph</text>
+
+    <!-- commit graph: lanes, labels, placeholder messages -->
+    <line x1="846" y1="392" x2="846" y2="424" stroke="#7f849c" stroke-width="2" stroke-dasharray="3 4"/>
+    <line x1="846" y1="424" x2="846" y2="584" stroke="#89b4fa" stroke-width="2"/>
+    <path d="M846 584 C846 568 866 568 866 552 V488 C866 472 846 472 846 456" fill="none" stroke="#cba6f7" stroke-width="2"/>
+    <circle cx="846" cy="392" r="5" fill="#181825" stroke="#7f849c" stroke-width="2"/>
+    <circle cx="846" cy="424" r="5" fill="#89b4fa"/>
+    <circle cx="846" cy="456" r="5" fill="#89b4fa"/>
+    <circle cx="866" cy="488" r="5" fill="#cba6f7"/>
+    <circle cx="846" cy="520" r="5" fill="#89b4fa"/>
+    <circle cx="866" cy="552" r="5" fill="#cba6f7"/>
+    <circle cx="846" cy="584" r="5" fill="#89b4fa"/>
+
+    <text class="m" x="884" y="397" font-size="16" fill="#7f849c">uncommitted</text>
+    <rect x="878" y="412" width="162" height="24" rx="5" fill="#89b4fa" fill-opacity="0.18" stroke="#89b4fa" stroke-opacity="0.6"/>
+    <text class="m" x="886" y="429" font-size="15" fill="#89b4fa">feat/import-works</text>
+    <g fill="#cdd6f4" fill-opacity="0.16">
+      <rect x="884" y="451" width="190" height="10" rx="5"/>
+      <rect x="884" y="483" width="150" height="10" rx="5"/>
+      <rect x="884" y="515" width="176" height="10" rx="5"/>
+      <rect x="884" y="547" width="132" height="10" rx="5"/>
+    </g>
+    <rect x="878" y="572" width="56" height="24" rx="5" fill="#a6e3a1" fill-opacity="0.18" stroke="#a6e3a1" stroke-opacity="0.6"/>
+    <text class="m" x="886" y="589" font-size="15" fill="#a6e3a1">main</text>
+    <text class="m" x="944" y="589" font-size="15" fill="#a6adc8">first commit</text>
+  </g>
+
+  <!-- Status bar -->
+  <text class="m" x="334" y="679" font-size="15" fill="#7f849c">main-dev · Catppuccin Mocha</text>
+</svg>
