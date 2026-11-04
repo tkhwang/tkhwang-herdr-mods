@@ -451,13 +451,30 @@ export default class Agents extends View {
       const open = !this.folded.has(g.id);
       const top = g.members.reduce((m, a) => ((RANK[a.status] ?? 0) > (RANK[m] ?? 0) ? a.status : m), null);
       const space = g.id.slice(3);
-      const branches = [...new Set(g.members.map((a) => allPanes.find((p) => p.pane === a.pane)?.branch).filter(Boolean))];
+      // wrapper repos: a workbranch task space (a task folder of repos, not a repo; better-spaces
+      // publishes them as shared "better-spaces.wrappers") is named after its repos as the
+      // Spaces list draws it, and their branches stand in when no agent's folder has one.
+      const repos = shared("better-spaces.wrappers")?.[space]?.repos ?? [];
+      const named = spaces().find((s) => s.id === space)?.named ?? false;
+      const label = repos.length && !named ? repos.map((r) => r.name).join(", ") : g.label;
+      const fromPanes = [...new Set(g.members.map((a) => allPanes.find((p) => p.pane === a.pane)?.branch).filter(Boolean))];
+      const branches = fromPanes.length
+        ? fromPanes
+        : repos.map((r) => `${named || repos.length > 1 ? `${r.name}: ` : ""}${r.branch ?? "detached"}`);
+      // wrapper repos: a task's branches go on a line under the name, as the Spaces list draws
+      // them, so a long repo name doesn't cut them short; a repo space keeps its branch beside.
+      const under = !fromPanes.length && branches.length > 0;
+      const branchOf = (el) => el
+        .child(svg("mods/workspace-chrome/git-branch.svg").size(11).flex_none().text_color(t.dim))
+        .child(div().min_w(0).truncate().text_size(11).text_color(t.dim).tooltip(branches.join(", ")).child(branches.join(", ")));
+      const name = div().max_w(150).truncate().text_size(12.5).font_semibold().text_color(t.foreground)
+        .when(label !== g.label, (el) => el.tooltip(g.label)).child(label);
       return h_flex()
         .id(g.id)
         .px(8)
         .when(!first, (el) => el.mt(6).border_t(1).border_color(t.border))
         .pt(first ? 6 : 10)
-        .h(first ? 30 : 36)
+        .h((first ? 30 : 36) + (under ? 15 : 0)) // wrapper repos
         .flex_none()
         .gap(6)
         .items_center()
@@ -467,11 +484,11 @@ export default class Agents extends View {
           cx.notify();
         })
         .child(h_flex().size(16).flex_none().rounded(4).bg(spaceFill(space)).items_center().justify_center()
-          .text_size(9.5).font_bold().text_color("#ffffff").child([...g.label][0]?.toUpperCase() ?? "?"))
-        .child(div().flex_none().max_w(150).truncate().text_size(12.5).font_semibold().text_color(t.foreground).child(g.label))
-        .when(branches.length > 0, (el) => el
-          .child(svg("mods/workspace-chrome/git-branch.svg").size(11).flex_none().text_color(t.dim))
-          .child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(branches.join(", "))))
+          .text_size(9.5).font_bold().text_color("#ffffff").child([...label][0]?.toUpperCase() ?? "?")) // wrapper repos
+        .child(under // wrapper repos
+          ? v_flex().flex_none().min_w(0).max_w(200).gap(1).child(name).child(branchOf(h_flex().min_w(0).gap(4).items_center()))
+          : name.flex_none())
+        .when(branches.length > 0 && !under, branchOf)
         .when(!open, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(String(g.members.length))))
         .child(div().flex_1())
         .when(!open, (el) => el
