@@ -4,10 +4,10 @@
 // navigation commands from filipores/herdr-spaces-status@4881e68 (navigation.js,
 // marked "status glow"); the active space is tinted cyan, with a cyan bar on the
 // left and its name in bold (marked "current highlight"); a workbranch task space (a
-// task folder of repos, or a repo right in one) is named after its task folder, with its
-// project's letter and a line under the name for the project and what differs from usual
-// (a repo off the task's branch, ahead or behind), and publishes them for the Agents list
-// (marked "wrapper repos").
+// task folder of repos, or a repo right in one) is named after its repo with the branch
+// under it when it has one repo, and after its task folder with a line for the project and
+// what differs from usual (a repo off the task's branch, ahead or behind) when it has
+// several, and publishes them for the Agents list (marked "wrapper repos").
 // Better Spaces: a native spaces sidebar with right-aligned branches, nested
 // worktrees, and a PR status line. Repository facts follow each space's first
 // terminal. Agent attention and GitHub PR state remain separate concepts.
@@ -63,8 +63,9 @@ const basename = (path) => path.replace(/\/+$/, "").split("/").pop();
 const GIT_FALLBACK_MS = 15000;
 
 // wrapper repos: a workbranch task folder holds the task's repos (backend/ and frontend/ side
-// by side) and is not a repo. Its repos are the same in every task of a project, so the folder
-// names the row: `<project>/<task>/<repo>`. A task folder has `.workbranch.task`; an older one
+// by side) and is not a repo: `<project>/<task>/<repo>`. With one repo the repo names the row
+// and its branch the task; with several, which are the same in every task of a project, the
+// folder names the row. A task folder has `.workbranch.task`; an older one
 // without it is a folder of repos right under the project's `.workbranch.config`, other than
 // its main worktrees folder (`_base`). TASK_INFO prints `L` for that older kind, `P <project
 // name>`, `B <repo> <branch>` per task-file branch and `R <repo>` per repo (better-changes'
@@ -85,9 +86,13 @@ const TASK_INFO = [
   "exit 0",
 ].join("\n");
 const WRAPPER_MAX_REPOS = 6;
-// wrapper repos: shared { [space id]: { folder, task, root, project, repos: [{ name, branch,
-// expected, ahead, behind }] } }, for other mods (agents-dev's space headers and repo tags).
+// wrapper repos: shared { [space id]: { folder, name, task, root, project, repos: [{ name,
+// branch, expected, ahead, behind }] } }, for other mods (agents-dev's space headers and repo
+// tags); `name` is the space's name unless the person named it.
 const WRAPPERS = "better-spaces.wrappers";
+
+// wrapper repos: a task repo's branch as shown.
+const branchName = (r) => (r.branch === "(detached)" ? "detached" : (r.branch ?? "detached"));
 
 // wrapper repos: the branch a task's repo shows because it is not the expected one, or null.
 // Expected: the task file's REPO_BRANCH, else the task folder's own name, which workbranch
@@ -114,11 +119,14 @@ export function glyph(status) {
   return status === "blocked" || status === "done" ? "●" : "·";
 }
 
-// status glow: done is green, blocked orange; working is a separate neutral contour.
-const GLOW = { done: "#22c55e", blocked: "#f59e0b" };
+// status glow: done is green, blocked orange; working is yellow, the agent color of the tab
+// bar (tabs-dev), and breathes. Blocked is a deeper orange than the original amber, which
+// read as the working yellow.
+const WORKING = "#facc15";
+const GLOW = { done: "#22c55e", blocked: "#f97316" };
 
 export function tone(t, status) {
-  return GLOW[status] ?? (status === "working" ? t.muted : t[status]) ?? t.unknown;
+  return GLOW[status] ?? (status === "working" ? WORKING : t[status]) ?? t.unknown;
 }
 
 // status glow: layered translucent outlines (the renderer has no colored shadow).
@@ -138,24 +146,28 @@ function glow(status) {
   ];
 }
 
-// status glow: a thin foreground contour that breathes while an agent in the space works.
-function workPulse(id, t) {
-  return div()
-    .id(`work-pulse-${id}`)
-    .absolute()
-    .inset(0)
-    .loop("opacity", { from: 0.1, to: 0.24, period: 3200, easing: "ease-in-out" })
-    .children(
-      [1, 0.38, 0.16, 0.06].map((opacity, i) =>
-        div()
-          .absolute()
-          .inset(-i)
-          .rounded(8 + i)
-          .border(1)
-          .border_color(t.foreground)
-          .opacity(opacity),
+// status glow: while an agent in the space works, a yellow fill (not on the current row,
+// which keeps its cyan) and layered yellow outlines that breathe, so a working space stands
+// out like a done or blocked one, and apart from them by moving.
+function workPulse(id, current) {
+  return [
+    ...(current ? [] : [div().absolute().inset(0).rounded(8).bg(`${WORKING}1f`)]),
+    div()
+      .id(`work-pulse-${id}`)
+      .absolute()
+      .inset(0)
+      .loop("opacity", { from: 0.45, to: 1, period: 1800, easing: "ease-in-out" })
+      .children(
+        ["cc", "59", "26", "10"].map((alpha, i) =>
+          div()
+            .absolute()
+            .inset(-i)
+            .rounded(8 + i)
+            .border(1)
+            .border_color(`${WORKING}${alpha}`),
+        ),
       ),
-    );
+  ];
 }
 
 // current highlight: a plain selected background looked like the status outlines, and most
@@ -275,23 +287,24 @@ export default class Spaces extends View {
     return Math.max(PORT_LINE, Math.ceil(em(1.25)));
   }
 
-  // wrapper repos: the line under a task's name, indented to it: the project, then only the
-  // repos with something to say: a branch that is not the task's (yellow), ahead, behind. The
-  // repo's name goes first when the task has several. Every repo's branch is in the tooltip.
+  // wrapper repos: the line under a task's name, indented to it. A task of one repo: its branch
+  // (yellow when it isn't the task's), ahead and behind, after the repo's name when the person
+  // named the space. A task of several: the project, then only the repos with something to say:
+  // a branch that is not the task's (yellow, after the repo's name), ahead, behind. Every repo's
+  // branch is in the tooltip.
   taskLine(w, wr, tree, t) {
-    const many = wr.repos.length > 1;
-    const notes = wr.repos
-      .map((r) => ({ r, off: offBranch(r, wr.task) }))
-      .filter(({ r, off }) => off || r.ahead > 0 || r.behind > 0);
     const tip = wr.repos
       .map((r) => {
-        const branch = r.branch === "(detached)" ? "detached" : (r.branch ?? "detached");
         const ab = `${r.ahead > 0 ? ` \u2191${r.ahead}` : ""}${r.behind > 0 ? ` \u2193${r.behind}` : ""}`;
         const want = r.expected && r.branch !== r.expected ? ` (task: ${r.expected})` : "";
-        return `${r.name}: ${branch}${ab}${want}`;
+        return `${r.name}: ${branchName(r)}${ab}${want}`;
       })
       .join("\n");
-    return h_flex()
+    const counts = (r) => [
+      ...(r.ahead > 0 ? [div().flex_none().text_color(t.ansi2).child(`\u2191${r.ahead}`)] : []),
+      ...(r.behind > 0 ? [div().flex_none().text_color(t.ansi1).child(`\u2193${r.behind}`)] : []),
+    ];
+    const line = h_flex()
       .id(`space-task-${w.id}`)
       .h(this.portLineHeight())
       .flex_none()
@@ -301,17 +314,31 @@ export default class Spaces extends View {
       .text_size(em(0.85))
       .text_color(t.dim)
       .overflow_hidden()
-      .tooltip(tip)
-      .child(div().min_w(0).truncate().child(wr.project))
-      .children(
-        notes.flatMap(({ r, off }) => [
-          div().flex_none().child("\u00b7"),
-          ...(many ? [div().flex_none().text_color(t.muted).child(off ? `${r.name}:` : r.name)] : []),
-          ...(off ? [div().min_w(0).truncate().text_color(t.ansi3).child(off)] : []),
-          ...(r.ahead > 0 ? [div().flex_none().text_color(t.ansi2).child(`\u2191${r.ahead}`)] : []),
-          ...(r.behind > 0 ? [div().flex_none().text_color(t.ansi1).child(`\u2193${r.behind}`)] : []),
-        ]),
-      );
+      .tooltip(tip);
+    if (wr.repos.length === 1) {
+      const r = wr.repos[0];
+      return line
+        .when(Boolean(w.named), (el) => el.child(div().flex_none().text_color(t.muted).child(`${r.name}:`)))
+        .child(
+          div()
+            .min_w(0)
+            .truncate()
+            .when(Boolean(offBranch(r, wr.task)), (el) => el.text_color(t.ansi3))
+            .child(branchName(r)),
+        )
+        .children(counts(r));
+    }
+    const notes = wr.repos
+      .map((r) => ({ r, off: offBranch(r, wr.task) }))
+      .filter(({ r, off }) => off || r.ahead > 0 || r.behind > 0);
+    return line.child(div().min_w(0).truncate().child(wr.project)).children(
+      notes.flatMap(({ r, off }) => [
+        div().flex_none().child("\u00b7"),
+        div().flex_none().text_color(t.muted).child(off ? `${r.name}:` : r.name),
+        ...(off ? [div().min_w(0).truncate().text_color(t.ansi3).child(off)] : []),
+        ...counts(r),
+      ]),
+    );
   }
 
   // wrapper repos: the task name's tooltip: the name the person gave, project / task, folder.
@@ -607,7 +634,11 @@ export default class Spaces extends View {
       }
       repos.push(repo);
     }
-    return repos.length ? { task: basename(root), root, project, repos } : null;
+    // The space's name: a task of one repo goes by the repo (its branch says which task), a
+    // task of several by its folder (its repos are the same in every task of the project).
+    const task = basename(root);
+    const name = repos.length === 1 ? repos[0].name : task;
+    return repos.length ? { name, task, root, project, repos } : null;
   }
 
   // wrapper repos: the current spaces' wrappers, for other mods (agents-dev's space headers),
@@ -958,11 +989,11 @@ export default class Spaces extends View {
     const color = colors[w.id] ?? "ansi6";
     const fill = color.startsWith("#") ? color : (AVATAR_COLORS[color] ?? t[color]);
     const ports = this.ports?.[w.id] ?? []; // dev ports
-    // wrapper repos: a task row is named after its task folder unless the person named the
-    // space, takes the row's width (no branch beside it), and has its project's letter (task
-    // names mostly start with feat-/feature-); the project and what differs go under it.
-    const label = wr && !w.named ? wr.task : w.name;
-    const letter = [...(wr?.project || label)][0]?.toUpperCase() ?? "?";
+    // wrapper repos: a task row is named after its repo (one) or task folder (several) unless
+    // the person named the space, takes the row's width (its branch or project goes under it),
+    // and has its repo's or project's letter (task names mostly start with feat-/feature-).
+    const label = wr && !w.named ? wr.name : w.name;
+    const letter = [...(wr ? (wr.repos.length === 1 ? wr.name : wr.project) : label)][0]?.toUpperCase() ?? "?";
     return v_flex()
       .relative()
       .id(`space-${w.id}`)
@@ -1009,7 +1040,7 @@ export default class Spaces extends View {
         cx.notify();
       })
       .on_mouse_down("right", () => this.menu(w))
-      .when(Boolean(working), (el) => el.child(workPulse(w.id, t))) // status glow
+      .when(Boolean(working), (el) => el.children(workPulse(w.id, w.active))) // status glow
       .children(glow(w.status)) // status glow
       .child(
         h_flex()
@@ -1064,7 +1095,7 @@ export default class Spaces extends View {
       .when(w.active, (el) => el.bg(`${CURRENT}33`).child(currentBar())) // current highlight
       .hover((s) => s.bg(t.hover))
       .on_click(() => run("space.select", { id: w.id }))
-      .when(Boolean(working), (el) => el.child(workPulse(w.id, t))) // status glow
+      .when(Boolean(working), (el) => el.children(workPulse(w.id, w.active))) // status glow
       .children(glow(w.status)) // status glow
       .child(
         div()

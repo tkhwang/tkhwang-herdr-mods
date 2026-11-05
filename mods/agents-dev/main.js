@@ -71,8 +71,11 @@ function icon(p, size, color) {
 
 // status glow: the same row treatment as the Spaces list (better-spaces, from
 // filipores/herdr-spaces-status): done green, blocked orange, each with a faint fill
-// and layered outlines; working a thin foreground contour that breathes. Idle: nothing.
-const GLOW = { done: "#22c55e", blocked: "#f59e0b" };
+// and layered outlines; working the same in yellow (the tab bar's agent color), breathing,
+// without the fill on the focused row, which keeps its cyan. Idle: nothing. Blocked is a
+// deeper orange than the original amber, which read as the working yellow.
+const WORKING = "#facc15";
+const GLOW = { done: "#22c55e", blocked: "#f97316" };
 
 function glow(status) {
   const color = GLOW[status];
@@ -84,14 +87,17 @@ function glow(status) {
   ];
 }
 
-function workPulse(id, t) {
-  return div().id(`ag-pulse-${id}`).absolute().inset(0)
-    .loop("opacity", { from: 0.1, to: 0.24, period: 3200, easing: "ease-in-out" })
-    .children([1, 0.38, 0.16, 0.06].map((opacity, i) =>
-      div().absolute().inset(-i).rounded(8 + i).border(1).border_color(t.foreground).opacity(opacity)));
+function workPulse(id, current) {
+  return [
+    ...(current ? [] : [div().absolute().inset(0).rounded(8).bg(`${WORKING}1f`)]),
+    div().id(`ag-pulse-${id}`).absolute().inset(0)
+      .loop("opacity", { from: 0.45, to: 1, period: 1800, easing: "ease-in-out" })
+      .children(["cc", "59", "26", "10"].map((alpha, i) =>
+        div().absolute().inset(-i).rounded(8 + i).border(1).border_color(`${WORKING}${alpha}`))),
+  ];
 }
 
-const statusGlow = (a, t) => [...(a.status === "working" ? [workPulse(a.address, t)] : []), ...glow(a.status)];
+const statusGlow = (a) => [...(a.status === "working" ? workPulse(a.address, a.focused) : []), ...glow(a.status)];
 
 // current highlight: as in the Spaces list, the focused agent's row is cyan, a tint and
 // a bar on the left, so it reads apart from the status outlines and the green space colors.
@@ -323,14 +329,15 @@ export default class Agents extends View {
     };
 
     // wrapper repos: a workbranch task space (better-spaces publishes them as shared
-    // "better-spaces.wrappers") goes by its task folder's name as the Spaces list draws it,
-    // unless the person named the space. In a task of several repos an agent's row names the
-    // repo its folder is in; at the task's own folder it says nothing more.
+    // "better-spaces.wrappers") goes by the name the Spaces list gives it (its repo when it has
+    // one, its task folder when it has several), unless the person named the space. In a task
+    // of several repos an agent's row names the repo its folder is in; at the task's own
+    // folder it says nothing more.
     const wrappers = shared("better-spaces.wrappers") ?? {};
     const allSpaces = spaces();
     const allPanes = panes();
     const spaceName = (id, name) =>
-      wrappers[id] && !allSpaces.find((s) => s.id === id)?.named ? wrappers[id].task : name;
+      wrappers[id] && !allSpaces.find((s) => s.id === id)?.named ? wrappers[id].name : name;
     const repoOf = (a) => {
       const wr = wrappers[a.space];
       if (!wr || wr.repos.length < 2) return null;
@@ -356,7 +363,7 @@ export default class Agents extends View {
           .when(a.focused, (el) => el.bg(`${CURRENT}33`).child(currentBar())) // current highlight
           .hover((s) => s.bg(t.hover))
           .on_click(() => run("pane.focus", { pane: a.pane }))
-          .children(statusGlow(a, t)) // status glow
+          .children(statusGlow(a)) // status glow
           .child(div().flex_1().min_w(0).whitespace_nowrap().text_right().text_color(t.muted).child(String(i + 1)))
           .child(h_flex().w(14).flex_none().items_center().justify_center().child(this.status(t, a, true)));
       }
@@ -404,7 +411,7 @@ export default class Agents extends View {
           cx.notify();
         })
         .on_click(() => run("pane.focus", { pane: a.pane }))
-        .children(statusGlow(a, t)) // status glow
+        .children(statusGlow(a)) // status glow
         .when(Boolean(pic), el => el.child(div().id(`agent-fold-${a.address}`)
           .when(subs.length > 0, el => el.on_click((_e, cx) => {
             cx.stop_propagation();
@@ -462,24 +469,30 @@ export default class Agents extends View {
     };
     // space headers: in "Grouped by space" a space reads as a heading, not a dim label.
     // A line above every group but the first, the space's colored letter as the Spaces list
-    // draws it and the name in bold. No branch: the Spaces list shows a space's git state, the
-    // Agents list who works where.
+    // draws it and the name in bold. No git state (ahead, behind, PRs): the Spaces list shows
+    // that, the Agents list who works where.
     // MARK and spaceFill (above the rows) are copied from spaces' main.js (keep them in step).
     const spaceHeader = (g, first) => {
       const open = !this.folded.has(g.id);
       const top = g.members.reduce((m, a) => ((RANK[a.status] ?? 0) > (RANK[m] ?? 0) ? a.status : m), null);
       const space = g.id.slice(3);
-      // wrapper repos: a task's name and its project's letter, as the Spaces list draws them;
-      // the project and the task folder in the tooltip.
+      // wrapper repos: a task's name and letter as the Spaces list draws them, the project and
+      // task folder in the tooltip. A task of one repo is named after the repo, so its branch,
+      // which says which task, goes on a line under the name.
       const wr = wrappers[space];
       const label = spaceName(space, g.label);
-      const letter = [...(wr?.project || label)][0]?.toUpperCase() ?? "?";
+      const single = wr?.repos.length === 1 ? wr.repos[0] : null;
+      const branch = single ? (single.branch && single.branch !== "(detached)" ? single.branch : "detached") : null;
+      const letter = [...(wr ? (single ? wr.name : wr.project) : label)][0]?.toUpperCase() ?? "?";
+      const name = div().min_w(0).truncate().text_size(12.5).font_semibold().text_color(t.foreground)
+        .when(Boolean(wr), (el) => el.tooltip(`${label === wr.name ? "" : `${label}\n`}${wr.project} / ${wr.task}\n${wr.root}`))
+        .child(label);
       return h_flex()
         .id(g.id)
         .px(8)
         .when(!first, (el) => el.mt(6).border_t(1).border_color(t.border))
         .pt(first ? 6 : 10)
-        .h(first ? 30 : 36)
+        .h((first ? 30 : 36) + (branch ? 15 : 0)) // wrapper repos
         .flex_none()
         .gap(6)
         .items_center()
@@ -490,9 +503,11 @@ export default class Agents extends View {
         })
         .child(h_flex().size(16).flex_none().rounded(4).bg(spaceFill(space)).items_center().justify_center()
           .text_size(9.5).font_bold().text_color("#ffffff").child(letter)) // wrapper repos
-        .child(div().min_w(0).truncate().text_size(12.5).font_semibold().text_color(t.foreground)
-          .when(Boolean(wr), (el) => el.tooltip(`${label === wr.task ? "" : `${label}\n`}${wr.project} / ${wr.task}\n${wr.root}`)) // wrapper repos
-          .child(label))
+        .child(branch // wrapper repos
+          ? v_flex().min_w(0).gap(1).child(name).child(h_flex().min_w(0).gap(4).items_center()
+            .child(svg("mods/workspace-chrome/git-branch.svg").size(11).flex_none().text_color(t.dim))
+            .child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(branch)))
+          : name)
         .when(!open, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(String(g.members.length))))
         .child(div().flex_1())
         .when(!open, (el) => el
