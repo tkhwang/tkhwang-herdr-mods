@@ -71,8 +71,11 @@ function icon(p, size, color) {
 
 // status glow: the same row treatment as the Spaces list (better-spaces, from
 // filipores/herdr-spaces-status): done green, blocked orange, each with a faint fill
-// and layered outlines; working a thin foreground contour that breathes. Idle: nothing.
-const GLOW = { done: "#22c55e", blocked: "#f59e0b" };
+// and layered outlines; working a thin foreground contour that breathes, yellow (the tab
+// bar's agent color) and stronger when the agent is in the tab open on the right. Idle:
+// nothing. Blocked is a deeper orange than the original amber, which read as that yellow.
+const WORKING = "#facc15";
+const GLOW = { done: "#22c55e", blocked: "#f97316" };
 
 function glow(status) {
   const color = GLOW[status];
@@ -84,14 +87,32 @@ function glow(status) {
   ];
 }
 
-function workPulse(id, t) {
-  return div().id(`ag-pulse-${id}`).absolute().inset(0)
-    .loop("opacity", { from: 0.1, to: 0.24, period: 3200, easing: "ease-in-out" })
+function workPulse(id, t, open) {
+  const [from, to, period] = open ? [0.45, 1, 1800] : [0.1, 0.24, 3200];
+  return div().id(`ag-pulse-${id}${open ? "-open" : ""}`).absolute().inset(0)
+    .loop("opacity", { from, to, period, easing: "ease-in-out" })
     .children([1, 0.38, 0.16, 0.06].map((opacity, i) =>
-      div().absolute().inset(-i).rounded(8 + i).border(1).border_color(t.foreground).opacity(opacity)));
+      div().absolute().inset(-i).rounded(8 + i).border(1).border_color(open ? WORKING : t.foreground).opacity(opacity)));
 }
 
-const statusGlow = (a, t) => [...(a.status === "working" ? [workPulse(a.address, t)] : []), ...glow(a.status)];
+// open: the agent is in the tab shown on the right (here is focused()).
+const statusGlow = (a, t, here) => [
+  ...(a.status === "working" ? [workPulse(a.address, t, a.space === here?.space && a.tab === here?.tab)] : []),
+  ...glow(a.status),
+];
+
+// space initials: a space's avatar shows the first letters of its name's first and last words
+// (tkhwang-herdr-mods TM, feature-cpq-task-a FA), one letter for a one-word name: a single
+// letter came out the same for most spaces of one project or owner. Kept in step with
+// better-spaces' copy.
+function initials(name) {
+  const words = (name ?? "")
+    .replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2")
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+  if (!words.length) return "?";
+  return ([...words[0]][0] + (words.length > 1 ? [...words.at(-1)][0] : "")).toUpperCase();
+}
 
 // current highlight: as in the Spaces list, the focused agent's row is cyan, a tint and
 // a bar on the left, so it reads apart from the status outlines and the green space colors.
@@ -251,7 +272,8 @@ export default class Agents extends View {
     let list = agents();
     this.listed = new Map(list.map((a) => [a.address, a.status]));
     const all = terminals();
-    const shown = focused()?.agent;
+    const here = focused(); // status glow
+    const shown = here?.agent;
     const now = Date.now();
     this.track(list, now);
     this.hold(list);
@@ -322,6 +344,23 @@ export default class Agents extends View {
       return c.startsWith("#") ? c : (MARK[c] ?? t[c]);
     };
 
+    // wrapper repos: a workbranch task space (better-spaces publishes them as shared
+    // "better-spaces.wrappers") goes by the name the Spaces list gives it (its repo when it has
+    // one, its task folder when it has several), unless the person named the space. In a task
+    // of several repos an agent's row names the repo its folder is in; at the task's own
+    // folder it says nothing more.
+    const wrappers = shared("better-spaces.wrappers") ?? {};
+    const allSpaces = spaces();
+    const allPanes = panes();
+    const spaceName = (id, name) =>
+      wrappers[id] && !allSpaces.find((s) => s.id === id)?.named ? wrappers[id].name : name;
+    const repoOf = (a) => {
+      const wr = wrappers[a.space];
+      if (!wr || wr.repos.length < 2) return null;
+      const cwd = allPanes.find((p) => p.pane === a.pane)?.cwd ?? "";
+      return wr.repos.find((r) => cwd === `${wr.root}/${r.name}` || cwd.startsWith(`${wr.root}/${r.name}/`))?.name ?? null;
+    };
+
     const row = (a, i, subs = []) => {
       const pic = icon(a.program, 16, t.foreground);
       const more = detail.get(a.address);
@@ -340,7 +379,7 @@ export default class Agents extends View {
           .when(a.focused, (el) => el.bg(`${CURRENT}33`).child(currentBar())) // current highlight
           .hover((s) => s.bg(t.hover))
           .on_click(() => run("pane.focus", { pane: a.pane }))
-          .children(statusGlow(a, t)) // status glow
+          .children(statusGlow(a, t, here)) // status glow
           .child(div().flex_1().min_w(0).whitespace_nowrap().text_right().text_color(t.muted).child(String(i + 1)))
           .child(h_flex().w(14).flex_none().items_center().justify_center().child(this.status(t, a, true)));
       }
@@ -367,7 +406,8 @@ export default class Agents extends View {
       // Under a space header the space goes without saying; an automatic tab number says nothing.
       // Without a space header above (priority, pinned) the row names its space.
       const full = byPriority || isPinned;
-      const name = full ? a.space_name || label(a) : more ?? (/^\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a));
+      const name = full ? spaceName(a.space, a.space_name) || label(a) : more ?? (/^\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a)); // wrapper repos
+      const repo = repoOf(a); // wrapper repos
       return h_flex()
         .id(`ag-${a.address}`)
         .relative() // status glow
@@ -387,7 +427,7 @@ export default class Agents extends View {
           cx.notify();
         })
         .on_click(() => run("pane.focus", { pane: a.pane }))
-        .children(statusGlow(a, t)) // status glow
+        .children(statusGlow(a, t, here)) // status glow
         .when(Boolean(pic), el => el.child(div().id(`agent-fold-${a.address}`)
           .when(subs.length > 0, el => el.on_click((_e, cx) => {
             cx.stop_propagation();
@@ -398,6 +438,7 @@ export default class Agents extends View {
           .child(div().min_w(0).max_w(full && more ? 120 : 200).truncate().text_color(idle ? t.muted : t.foreground)
             .when(a.focused, (el) => el.font_semibold()).child(name)) // current highlight
           .when(full && Boolean(more), el => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`\u00b7 ${more}`))))
+        .when(Boolean(repo), el => el.child(div().flex_none().text_size(10.5).text_color(t.dim).tooltip(`In ${repo}/`).child(repo))) // wrapper repos
         .when(Boolean(machine), el => el.child(div().text_size(10).text_color(t.dim).child(machine)))
         .when(subs.length > 0, el => el.child(fold(a, subs)))
         .when(this.hovered === a.address, el => el.child(pin))
@@ -444,37 +485,30 @@ export default class Agents extends View {
     };
     // space headers: in "Grouped by space" a space reads as a heading, not a dim label.
     // A line above every group but the first, the space's colored letter as the Spaces list
-    // draws it, the name in bold, and the git branch of its agents' folders when in a repo.
+    // draws it and the name in bold. No git state (ahead, behind, PRs): the Spaces list shows
+    // that, the Agents list who works where.
     // MARK and spaceFill (above the rows) are copied from spaces' main.js (keep them in step).
-    const allPanes = panes();
     const spaceHeader = (g, first) => {
       const open = !this.folded.has(g.id);
       const top = g.members.reduce((m, a) => ((RANK[a.status] ?? 0) > (RANK[m] ?? 0) ? a.status : m), null);
       const space = g.id.slice(3);
-      // wrapper repos: a workbranch task space (a task folder of repos, not a repo; better-spaces
-      // publishes them as shared "better-spaces.wrappers") is named after its repos as the
-      // Spaces list draws it, and their branches stand in when no agent's folder has one.
-      const repos = shared("better-spaces.wrappers")?.[space]?.repos ?? [];
-      const named = spaces().find((s) => s.id === space)?.named ?? false;
-      const label = repos.length && !named ? repos.map((r) => r.name).join(", ") : g.label;
-      const fromPanes = [...new Set(g.members.map((a) => allPanes.find((p) => p.pane === a.pane)?.branch).filter(Boolean))];
-      const branches = fromPanes.length
-        ? fromPanes
-        : repos.map((r) => `${named || repos.length > 1 ? `${r.name}: ` : ""}${r.branch ?? "detached"}`);
-      // wrapper repos: a task's branches go on a line under the name, as the Spaces list draws
-      // them, so a long repo name doesn't cut them short; a repo space keeps its branch beside.
-      const under = !fromPanes.length && branches.length > 0;
-      const branchOf = (el) => el
-        .child(svg("mods/workspace-chrome/git-branch.svg").size(11).flex_none().text_color(t.dim))
-        .child(div().min_w(0).truncate().text_size(11).text_color(t.dim).tooltip(branches.join(", ")).child(branches.join(", ")));
-      const name = div().max_w(150).truncate().text_size(12.5).font_semibold().text_color(t.foreground)
-        .when(label !== g.label, (el) => el.tooltip(g.label)).child(label);
+      // wrapper repos: a task's name and letter as the Spaces list draws them, the project and
+      // task folder in the tooltip. A task of one repo is named after the repo, so its branch,
+      // which says which task, goes on a line under the name.
+      const wr = wrappers[space];
+      const label = spaceName(space, g.label);
+      const single = wr?.repos.length === 1 ? wr.repos[0] : null;
+      const branch = single?.branch ? (single.branch === "(detached)" ? "detached" : single.branch) : null; // none: not read yet
+      const letter = initials(label); // space initials
+      const name = div().min_w(0).truncate().text_size(12.5).font_semibold().text_color(t.foreground)
+        .when(Boolean(wr), (el) => el.tooltip(`${label === wr.name ? "" : `${label}\n`}${wr.project} / ${wr.task}\n${wr.root}`))
+        .child(label);
       return h_flex()
         .id(g.id)
         .px(8)
         .when(!first, (el) => el.mt(6).border_t(1).border_color(t.border))
         .pt(first ? 6 : 10)
-        .h((first ? 30 : 36) + (under ? 15 : 0)) // wrapper repos
+        .h((first ? 30 : 36) + (branch ? 15 : 0)) // wrapper repos
         .flex_none()
         .gap(6)
         .items_center()
@@ -484,11 +518,12 @@ export default class Agents extends View {
           cx.notify();
         })
         .child(h_flex().size(16).flex_none().rounded(4).bg(spaceFill(space)).items_center().justify_center()
-          .text_size(9.5).font_bold().text_color("#ffffff").child([...label][0]?.toUpperCase() ?? "?")) // wrapper repos
-        .child(under // wrapper repos
-          ? v_flex().flex_none().min_w(0).max_w(200).gap(1).child(name).child(branchOf(h_flex().min_w(0).gap(4).items_center()))
-          : name.flex_none())
-        .when(branches.length > 0 && !under, branchOf)
+          .text_size(letter.length > 1 ? 8 : 9.5).font_bold().text_color("#ffffff").child(letter)) // space initials
+        .child(branch // wrapper repos
+          ? v_flex().min_w(0).gap(1).child(name).child(h_flex().min_w(0).gap(4).items_center()
+            .child(svg("mods/workspace-chrome/git-branch.svg").size(11).flex_none().text_color(t.dim))
+            .child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(branch)))
+          : name)
         .when(!open, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(String(g.members.length))))
         .child(div().flex_1())
         .when(!open, (el) => el
