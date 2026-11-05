@@ -88,18 +88,20 @@ const TASK_INFO = [
 ].join("\n");
 const WRAPPER_MAX_REPOS = 6;
 // wrapper repos: shared { [space id]: { folder, name, task, root, project, repos: [{ name,
-// branch, expected, ahead, behind }] } }, for other mods (agents-dev's space headers and repo
-// tags); `name` is the space's name unless the person named it.
+// branch, expected, ahead, behind, unread? }] } }, for other mods (agents-dev's space headers
+// and repo tags); `name` is the space's name unless the person named it. `unread`: the last
+// look couldn't read that repo, so it shows what it showed before, or no branch (null).
 const WRAPPERS = "better-spaces.wrappers";
 
-// wrapper repos: a task repo's branch as shown.
-const branchName = (r) => (r.branch === "(detached)" ? "detached" : (r.branch ?? "detached"));
+// wrapper repos: a task repo's branch as shown ("?" for a repo not read yet).
+const branchName = (r) => (r.branch === "(detached)" ? "detached" : (r.branch ?? "?"));
 
 // wrapper repos: the branch a task's repo shows because it is not the expected one, or null.
 // Expected: the task file's REPO_BRANCH, else the task folder's own name, which workbranch
 // makes from the branch with `/` as `-` (feature/cpq-task-a in feature-cpq-task-a).
 function offBranch(r, task) {
-  if (!r.branch || r.branch === "(detached)") return "detached";
+  if (!r.branch) return null; // not read yet: nothing to compare
+  if (r.branch === "(detached)") return "detached";
   if (r.expected) return r.branch === r.expected ? null : r.branch;
   return r.branch.replaceAll("/", "-") === task ? null : r.branch;
 }
@@ -195,7 +197,7 @@ export default class Spaces extends View {
     this.at = {}; // Space ID -> checkout key at the previous refresh.
     this.watching = new Set(); // local repos' git folders
     this.wrappers = Object.create(null); // wrapper repos: checkout key -> { task, root, project, repos }
-    this.emptyTasks = new Set(); // wrapper repos: task folders with no readable repos yet, retried like unsure
+    this.emptyTasks = new Set(); // wrapper repos: task folders with a repo not read yet, retried like unsure
     this.notTasks = new Set(); // wrapper repos: [machine, folder] above a repo, found not a task
     this.wrappersKey = ""; // wrapper repos: what was last published as shared WRAPPERS
     // Spaces made while this runs wait (at most a moment) for their git, so a
@@ -297,7 +299,7 @@ export default class Spaces extends View {
       .map((r) => {
         const ab = `${r.ahead > 0 ? ` \u2191${r.ahead}` : ""}${r.behind > 0 ? ` \u2193${r.behind}` : ""}`;
         const want = r.expected && r.branch !== r.expected ? ` (task: ${r.expected})` : "";
-        return `${r.name}: ${branchName(r)}${ab}${want}`;
+        return `${r.name}: ${r.branch ? branchName(r) : "couldn't read"}${ab}${want}`;
       })
       .join("\n");
     const counts = (r) => [
@@ -566,19 +568,21 @@ export default class Spaces extends View {
   // wrapper repos: whether `dir` is a workbranch task folder, and if so the space at `key`
   // reads as that task. `inRepo`: `dir` is the folder above the space's repo, asked on every
   // look at the repo, so a folder found not to be a task is remembered and not asked again.
-  // A task whose repos could not be read (none yet, a worktree still being made) is asked
-  // again by the poll until they can be, like `unsure`.
+  // A task with no repos yet, or with a repo git couldn't read (a worktree still being made,
+  // a broken link), is asked again by the poll until it can be, like `unsure`.
   async checkWrapper(key, dir, on, inRepo = false) {
     const place = JSON.stringify([on, dir]);
     let next = null;
     let retry = false;
     if (dir && dir !== "/" && dir !== home() && !this.notTasks.has(place)) {
       try {
-        const found = await this.readTask(dir, on);
+        const found = await this.readTask(dir, on, this.wrappers[key]);
         if (found === NOT_A_TASK) {
           if (inRepo) this.notTasks.add(place);
-        } else if (found) next = found;
-        else retry = true;
+        } else if (found) {
+          next = found;
+          retry = found.repos.some((r) => r.unread);
+        } else retry = true;
       } catch {
         // Couldn't ask (no sh, the machine is away): keep what it showed, look again later.
         next = this.wrappers[key] ?? null;
@@ -593,8 +597,10 @@ export default class Spaces extends View {
 
   // wrapper repos: a task folder's name, project and repos, each with its branch, the branch
   // its task file expects, and ahead/behind, read the way `check` reads a repo. NOT_A_TASK, or
-  // null for a task whose repos could not be read.
-  async readTask(dir, on) {
+  // null for a task with no repos yet. The task's shape comes from the repos found, not the
+  // ones git could read: a repo it couldn't read stays, `unread`, with what `old` (the
+  // previous look) showed for it, so a task of two never reads as a task of one.
+  async readTask(dir, on, old) {
     const ls = await exec("sh", ["-c", TASK_INFO], { cwd: dir, on });
     if (ls.code === NOT_A_TASK) return NOT_A_TASK;
     if (ls.code !== 0) return null;
@@ -615,6 +621,7 @@ export default class Spaces extends View {
     const project =
       lines.find((l) => l.startsWith("P "))?.slice(2).trim() ||
       basename(root.replace(/\/[^/]*$/, "") || "/");
+    const before = old?.root === root ? old.repos : [];
     const repos = [];
     for (const name of names) {
       const r = await exec(
@@ -622,8 +629,11 @@ export default class Spaces extends View {
         ["--no-optional-locks", "-c", "core.fsmonitor=false", "status", "--porcelain=v2", "--branch"],
         { cwd: `${root}/${name}`, on },
       );
-      if (r.code !== 0) continue;
       const repo = { name, branch: null, expected: expected[name] ?? null, ahead: 0, behind: 0 };
+      if (r.code !== 0) {
+        repos.push({ ...repo, ...before.find((b) => b.name === name), expected: repo.expected, unread: true });
+        continue;
+      }
       for (const line of r.stdout.split("\n")) {
         if (line.startsWith("# branch.head ")) repo.branch = line.slice(14);
         else if (line.startsWith("# branch.ab ")) {
@@ -637,8 +647,8 @@ export default class Spaces extends View {
     // The space's name: a task of one repo goes by the repo (its branch says which task), a
     // task of several by its folder (its repos are the same in every task of the project).
     const task = basename(root);
-    const name = repos.length === 1 ? repos[0].name : task;
-    return repos.length ? { name, task, root, project, repos } : null;
+    const name = names.length === 1 ? names[0] : task;
+    return names.length ? { name, task, root, project, repos } : null;
   }
 
   // wrapper repos: the current spaces' wrappers, for other mods (agents-dev's space headers),
@@ -988,7 +998,7 @@ export default class Spaces extends View {
   row({ w, i, g, wr, tree, working }, t) {
     const on = w.active;
     const status = this.checkoutStatus(w);
-    const hasPRLine = Boolean(status?.prs.length || status?.error);
+    const hasPRLine = !wr && Boolean(status?.prs.length || status?.error); // wrapper repos: no PR status on a task row
     const colors = shared("space.colors") ?? {};
     const color = colors[w.id] ?? "ansi6";
     const fill = color.startsWith("#") ? color : (AVATAR_COLORS[color] ?? t[color]);
@@ -1086,8 +1096,8 @@ export default class Spaces extends View {
       .when(hasPRLine, (el) => el.child(this.prLine(w, t, Boolean(tree))));
   }
 
-  compact({ w, i, working }, t) {
-    const badge = this.prBadge(w, t, true);
+  compact({ w, i, wr, working }, t) {
+    const badge = !wr && this.prBadge(w, t, true); // wrapper repos: no PR status on a task row
     return h_flex()
       .id(`space-${w.id}`)
       .relative() // status glow

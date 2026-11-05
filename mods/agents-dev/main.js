@@ -485,7 +485,7 @@ export default class Agents extends View {
       const wr = wrappers[space];
       const label = spaceName(space, g.label);
       const single = wr?.repos.length === 1 ? wr.repos[0] : null;
-      const branch = single ? (single.branch && single.branch !== "(detached)" ? single.branch : "detached") : null;
+      const branch = single?.branch ? (single.branch === "(detached)" ? "detached" : single.branch) : null; // none: not read yet
       const letter = [...(wr ? (single ? wr.name : wr.project) : label)][0]?.toUpperCase() ?? "?";
       const name = div().min_w(0).truncate().text_size(12.5).font_semibold().text_color(t.foreground)
         .when(Boolean(wr), (el) => el.tooltip(`${label === wr.name ? "" : `${label}\n`}${wr.project} / ${wr.task}\n${wr.root}`))
