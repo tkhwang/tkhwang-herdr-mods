@@ -4,8 +4,10 @@
 // navigation commands from filipores/herdr-spaces-status@4881e68 (navigation.js,
 // marked "status glow"); the active space is tinted cyan, with a cyan bar on the
 // left and its name in bold (marked "current highlight"); a workbranch task space (a
-// task folder of repos, not a repo) is named after its repos, with each repo's branch on a
-// line under the name, and publishes them for the Agents list (marked "wrapper repos").
+// task folder of repos, or a repo right in one) is named after its task folder, with its
+// project's letter and a line under the name for the project and what differs from usual
+// (a repo off the task's branch, ahead or behind), and publishes them for the Agents list
+// (marked "wrapper repos").
 // Better Spaces: a native spaces sidebar with right-aligned branches, nested
 // worktrees, and a PR status line. Repository facts follow each space's first
 // terminal. Agent attention and GitHub PR state remain separate concepts.
@@ -60,19 +62,41 @@ const basename = (path) => path.replace(/\/+$/, "").split("/").pop();
 // occasionally to catch edits and commits made outside Herdr.
 const GIT_FALLBACK_MS = 15000;
 
-// wrapper repos: a space whose folder is a workbranch task (`.workbranch.task` beside the
-// repos it checks out: backend/ and frontend/ side by side), not a repo. The folder names
-// the task, not the project, so the row is named after the repos and shows each one's
-// branch under it. A plain folder of repos (~/git) keeps its own name: NOT_A_TASK. The repo
-// loop is better-changes' repo picker line; hidden folders included.
-const NOT_A_TASK = 3; // TASK_REPOS' exit code: no `.workbranch.task` here
-const TASK_REPOS =
-  `[ -f .workbranch.task ] || exit ${NOT_A_TASK}; ` +
-  'for d in */ .[!.]*/; do [ -e "$d.git" ] && printf "%s\\n" "${d%/}"; done; exit 0';
+// wrapper repos: a workbranch task folder holds the task's repos (backend/ and frontend/ side
+// by side) and is not a repo. Its repos are the same in every task of a project, so the folder
+// names the row: `<project>/<task>/<repo>`. A task folder has `.workbranch.task`; an older one
+// without it is a folder of repos right under the project's `.workbranch.config`, other than
+// its main worktrees folder (`_base`). TASK_INFO prints `L` for that older kind, `P <project
+// name>`, `B <repo> <branch>` per task-file branch and `R <repo>` per repo (better-changes'
+// repo picker loop; hidden folders included), or exits NOT_A_TASK. A plain folder of repos
+// (~/git) and a project's own folder keep their names.
+const NOT_A_TASK = 3;
+const TASK_INFO = [
+  "if [ ! -f .workbranch.task ]; then",
+  `  [ -f ../.workbranch.config ] || exit ${NOT_A_TASK}`,
+  "  base=$(sed -n 's/^MAIN_WORKTREES_DIR[[:space:]][[:space:]]*//p' ../.workbranch.config | head -n 1)",
+  "  here=$(pwd)",
+  `  [ "\${here##*/}" = "\${base:-_base}" ] && exit ${NOT_A_TASK}`,
+  "  echo L",
+  "fi",
+  "sed -n 's/^PROJECT_NAME[[:space:]][[:space:]]*/P /p' ../.workbranch.config 2>/dev/null | head -n 1",
+  "sed -n 's/^REPO_BRANCH[[:space:]][[:space:]]*/B /p' .workbranch.task 2>/dev/null",
+  `for d in */ .[!.]*/; do [ -e "$d.git" ] && printf 'R %s\\n' "\${d%/}"; done`,
+  "exit 0",
+].join("\n");
 const WRAPPER_MAX_REPOS = 6;
-// wrapper repos: shared { [space id]: { folder, repos: [{ name, branch, ahead, behind }] } },
-// for other mods (agents-dev's space headers).
+// wrapper repos: shared { [space id]: { folder, task, root, project, repos: [{ name, branch,
+// expected, ahead, behind }] } }, for other mods (agents-dev's space headers and repo tags).
 const WRAPPERS = "better-spaces.wrappers";
+
+// wrapper repos: the branch a task's repo shows because it is not the expected one, or null.
+// Expected: the task file's REPO_BRANCH, else the task folder's own name, which workbranch
+// makes from the branch with `/` as `-` (feature/cpq-task-a in feature-cpq-task-a).
+function offBranch(r, task) {
+  if (!r.branch || r.branch === "(detached)") return "detached";
+  if (r.expected) return r.branch === r.expected ? null : r.branch;
+  return r.branch.replaceAll("/", "-") === task ? null : r.branch;
+}
 
 // What a stored color name looks like on an avatar (the same in every mod
 // that draws space avatars): one strong color per hue, light and dark alike.
@@ -158,8 +182,9 @@ export default class Spaces extends View {
     this.ready = {}; // machine -> its layout was readable at the last look
     this.at = {}; // Space ID -> checkout key at the previous refresh.
     this.watching = new Set(); // local repos' git folders
-    this.wrappers = Object.create(null); // wrapper repos: checkout key -> { repos }
+    this.wrappers = Object.create(null); // wrapper repos: checkout key -> { task, root, project, repos }
     this.emptyTasks = new Set(); // wrapper repos: task folders with no readable repos yet, retried like unsure
+    this.notTasks = new Set(); // wrapper repos: [machine, folder] above a repo, found not a task
     this.wrappersKey = ""; // wrapper repos: what was last published as shared WRAPPERS
     // Spaces made while this runs wait (at most a moment) for their git, so a
     // worktree appears under its repo instead of jumping there.
@@ -250,11 +275,24 @@ export default class Spaces extends View {
     return Math.max(PORT_LINE, Math.ceil(em(1.25)));
   }
 
-  // wrapper repos: one line per repo under the name, indented to it: the branch, ahead and
-  // behind as the name row shows them; the repo's name first when the name row doesn't say it.
-  wrapperLine(r, prefixed, tree, t) {
-    const branch = r.branch === "(detached)" ? "detached" : (r.branch ?? "detached");
+  // wrapper repos: the line under a task's name, indented to it: the project, then only the
+  // repos with something to say: a branch that is not the task's (yellow), ahead, behind. The
+  // repo's name goes first when the task has several. Every repo's branch is in the tooltip.
+  taskLine(w, wr, tree, t) {
+    const many = wr.repos.length > 1;
+    const notes = wr.repos
+      .map((r) => ({ r, off: offBranch(r, wr.task) }))
+      .filter(({ r, off }) => off || r.ahead > 0 || r.behind > 0);
+    const tip = wr.repos
+      .map((r) => {
+        const branch = r.branch === "(detached)" ? "detached" : (r.branch ?? "detached");
+        const ab = `${r.ahead > 0 ? ` \u2191${r.ahead}` : ""}${r.behind > 0 ? ` \u2193${r.behind}` : ""}`;
+        const want = r.expected && r.branch !== r.expected ? ` (task: ${r.expected})` : "";
+        return `${r.name}: ${branch}${ab}${want}`;
+      })
+      .join("\n");
     return h_flex()
+      .id(`space-task-${w.id}`)
       .h(this.portLineHeight())
       .flex_none()
       .pl(tree ? 44 : 27)
@@ -263,14 +301,22 @@ export default class Spaces extends View {
       .text_size(em(0.85))
       .text_color(t.dim)
       .overflow_hidden()
-      .when(prefixed, (el) => el.child(div().flex_none().text_color(t.muted).child(`${r.name}:`)))
-      .child(div().min_w(0).truncate().tooltip(`${r.name}: ${branch}`).child(branch))
-      .when(r.ahead > 0, (el) =>
-        el.child(div().flex_none().text_color(t.ansi2).child(`\u2191${r.ahead}`)),
-      )
-      .when(r.behind > 0, (el) =>
-        el.child(div().flex_none().text_color(t.ansi1).child(`\u2193${r.behind}`)),
+      .tooltip(tip)
+      .child(div().min_w(0).truncate().child(wr.project))
+      .children(
+        notes.flatMap(({ r, off }) => [
+          div().flex_none().child("\u00b7"),
+          ...(many ? [div().flex_none().text_color(t.muted).child(off ? `${r.name}:` : r.name)] : []),
+          ...(off ? [div().min_w(0).truncate().text_color(t.ansi3).child(off)] : []),
+          ...(r.ahead > 0 ? [div().flex_none().text_color(t.ansi2).child(`\u2191${r.ahead}`)] : []),
+          ...(r.behind > 0 ? [div().flex_none().text_color(t.ansi1).child(`\u2193${r.behind}`)] : []),
+        ]),
       );
+  }
+
+  // wrapper repos: the task name's tooltip: the name the person gave, project / task, folder.
+  taskTip(w, wr) {
+    return `${w.named ? `${w.name}\n` : ""}${wr.project} / ${wr.task}\n${wr.root}`;
   }
 
   checkNew(cx) {
@@ -479,8 +525,9 @@ export default class Spaces extends View {
         }
       }
       this.git[key] = info;
-      delete this.wrappers[key]; // wrapper repos
-      this.emptyTasks.delete(key); // wrapper repos
+      // wrapper repos: a repo right in a task folder (a space opened in task/backend) still
+      // reads as its task.
+      await this.checkWrapper(key, top.stdout.trim().replace(/\/[^/]*$/, ""), on, true);
       if (!on) this.watch(repo, cx);
     } catch {
       // Couldn't ask (the machine is away): keep what it showed, look again later.
@@ -489,48 +536,78 @@ export default class Spaces extends View {
     }
   }
 
-  // wrapper repos: the repos right under a workbranch task folder, each with its branch and
-  // ahead/behind, read the way `check` reads a repo. No task file (or the home folder): not a
-  // task. A task whose repos could not be read (none yet, a worktree still being made) is
-  // asked again by the poll until they can be, like `unsure`.
-  async checkWrapper(key, cwd, on) {
-    delete this.wrappers[key];
-    this.emptyTasks.delete(key);
-    if (!cwd || cwd === "/" || cwd === home()) return;
-    try {
-      const ls = await exec("sh", ["-c", TASK_REPOS], { cwd, on });
-      if (ls.code === NOT_A_TASK) return;
-      this.emptyTasks.add(key);
-      if (ls.code !== 0) return;
-      const base = cwd.replace(/\/+$/, "");
-      const names = ls.stdout.split("\n").filter(Boolean).slice(0, WRAPPER_MAX_REPOS);
-      const repos = [];
-      for (const name of names) {
-        const r = await exec(
-          "git",
-          ["--no-optional-locks", "-c", "core.fsmonitor=false", "status", "--porcelain=v2", "--branch"],
-          { cwd: `${base}/${name}`, on },
-        );
-        if (r.code !== 0) continue;
-        const repo = { name, branch: null, ahead: 0, behind: 0 };
-        for (const line of r.stdout.split("\n")) {
-          if (line.startsWith("# branch.head ")) repo.branch = line.slice(14);
-          else if (line.startsWith("# branch.ab ")) {
-            const [a, b] = line.slice(12).split(" ");
-            repo.ahead = Math.abs(parseInt(a, 10)) || 0;
-            repo.behind = Math.abs(parseInt(b, 10)) || 0;
-          }
-        }
-        repos.push(repo);
+  // wrapper repos: whether `dir` is a workbranch task folder, and if so the space at `key`
+  // reads as that task. `inRepo`: `dir` is the folder above the space's repo, asked on every
+  // look at the repo, so a folder found not to be a task is remembered and not asked again.
+  // A task whose repos could not be read (none yet, a worktree still being made) is asked
+  // again by the poll until they can be, like `unsure`.
+  async checkWrapper(key, dir, on, inRepo = false) {
+    const place = JSON.stringify([on, dir]);
+    let next = null;
+    let retry = false;
+    if (dir && dir !== "/" && dir !== home() && !this.notTasks.has(place)) {
+      try {
+        const found = await this.readTask(dir, on);
+        if (found === NOT_A_TASK) {
+          if (inRepo) this.notTasks.add(place);
+        } else if (found) next = found;
+        else retry = true;
+      } catch {
+        // Couldn't ask (no sh, the machine is away): keep what it showed, look again later.
+        next = this.wrappers[key] ?? null;
+        retry = true;
       }
-      if (repos.length) {
-        this.wrappers[key] = { repos };
-        this.emptyTasks.delete(key);
-      }
-    } catch {
-      // Couldn't ask (no sh, the machine is away): look again later.
-      this.emptyTasks.add(key);
     }
+    if (next) this.wrappers[key] = next;
+    else delete this.wrappers[key];
+    if (retry) this.emptyTasks.add(key);
+    else this.emptyTasks.delete(key);
+  }
+
+  // wrapper repos: a task folder's name, project and repos, each with its branch, the branch
+  // its task file expects, and ahead/behind, read the way `check` reads a repo. NOT_A_TASK, or
+  // null for a task whose repos could not be read.
+  async readTask(dir, on) {
+    const ls = await exec("sh", ["-c", TASK_INFO], { cwd: dir, on });
+    if (ls.code === NOT_A_TASK) return NOT_A_TASK;
+    if (ls.code !== 0) return null;
+    const lines = ls.stdout.split("\n");
+    const names = lines
+      .filter((l) => l.startsWith("R "))
+      .map((l) => l.slice(2))
+      .slice(0, WRAPPER_MAX_REPOS);
+    // A folder under a project without a task file is a task only while it holds repos.
+    if (lines.includes("L") && !names.length) return NOT_A_TASK;
+    const expected = {};
+    for (const l of lines) {
+      if (!l.startsWith("B ")) continue;
+      const [name, branch] = l.slice(2).trim().split(/\s+/);
+      if (name && branch) expected[name] = branch;
+    }
+    const root = dir.replace(/\/+$/, "");
+    const project =
+      lines.find((l) => l.startsWith("P "))?.slice(2).trim() ||
+      basename(root.replace(/\/[^/]*$/, "") || "/");
+    const repos = [];
+    for (const name of names) {
+      const r = await exec(
+        "git",
+        ["--no-optional-locks", "-c", "core.fsmonitor=false", "status", "--porcelain=v2", "--branch"],
+        { cwd: `${root}/${name}`, on },
+      );
+      if (r.code !== 0) continue;
+      const repo = { name, branch: null, expected: expected[name] ?? null, ahead: 0, behind: 0 };
+      for (const line of r.stdout.split("\n")) {
+        if (line.startsWith("# branch.head ")) repo.branch = line.slice(14);
+        else if (line.startsWith("# branch.ab ")) {
+          const [a, b] = line.slice(12).split(" ");
+          repo.ahead = Math.abs(parseInt(a, 10)) || 0;
+          repo.behind = Math.abs(parseInt(b, 10)) || 0;
+        }
+      }
+      repos.push(repo);
+    }
+    return repos.length ? { task: basename(root), root, project, repos } : null;
   }
 
   // wrapper repos: the current spaces' wrappers, for other mods (agents-dev's space headers),
@@ -539,7 +616,7 @@ export default class Spaces extends View {
     const out = {};
     for (const s of sp) {
       const w = this.wrappers[checkoutKey(s, ps)];
-      if (w) out[s.id] = { folder: spaceFolder(s, ps), repos: w.repos };
+      if (w) out[s.id] = { folder: spaceFolder(s, ps), ...w };
     }
     const key = JSON.stringify(out);
     if (key === this.wrappersKey) return;
@@ -592,8 +669,8 @@ export default class Spaces extends View {
     const list = sp
       .map((w, i) => {
         const key = checkoutKey(w, ps);
-        // wrapper repos: `wr` and the folder for the row's name and tooltip.
-        return { w, i, g: this.git[key] ?? null, wr: this.wrappers[key] ?? null, folder: spaceFolder(w, ps) };
+        // wrapper repos: `wr`, the task the space reads as.
+        return { w, i, g: this.git[key] ?? null, wr: this.wrappers[key] ?? null };
       })
       .filter((r) => this.shown.has(r.w.id));
     const mains = new Set(list.filter((r) => r.g && !r.g.linked).map((r) => r.g.repo));
@@ -873,7 +950,7 @@ export default class Spaces extends View {
   }
   // ── Expanded/compact rows and sidebar rendering ──────────────────────────
 
-  row({ w, i, g, wr, folder, tree, working }, t) {
+  row({ w, i, g, wr, tree, working }, t) {
     const on = w.active;
     const status = this.checkoutStatus(w);
     const hasPRLine = Boolean(status?.prs.length || status?.error);
@@ -881,17 +958,16 @@ export default class Spaces extends View {
     const color = colors[w.id] ?? "ansi6";
     const fill = color.startsWith("#") ? color : (AVATAR_COLORS[color] ?? t[color]);
     const ports = this.ports?.[w.id] ?? []; // dev ports
-    // wrapper repos: the row is named after the repos (the folder names the task), unless the
-    // person named the space; each repo's branch goes on a line under the name, with the
-    // repo's name first when the name row doesn't say which repo it is.
-    const repos = wr?.repos ?? [];
-    const label = repos.length && !w.named ? repos.map((r) => r.name).join(", ") : w.name;
-    const prefixed = Boolean(w.named) || repos.length > 1;
+    // wrapper repos: a task row is named after its task folder unless the person named the
+    // space, takes the row's width (no branch beside it), and has its project's letter (task
+    // names mostly start with feat-/feature-); the project and what differs go under it.
+    const label = wr && !w.named ? wr.task : w.name;
+    const letter = [...(wr?.project || label)][0]?.toUpperCase() ?? "?";
     return v_flex()
       .relative()
       .id(`space-${w.id}`)
       .px(8)
-      .h(rowHeight({ tree }) + (hasPRLine ? 22 : 0) + (ports.length + repos.length) * this.portLineHeight()) // wrapper repos
+      .h(rowHeight({ tree }) + (hasPRLine ? 22 : 0) + (ports.length + (wr ? 1 : 0)) * this.portLineHeight()) // wrapper repos
       .flex_none()
       .justify_center()
       .rounded(8)
@@ -954,23 +1030,24 @@ export default class Spaces extends View {
                 .text_size(em(0.82))
                 .font_bold()
                 .text_color("#ffffff")
-                .child([...label][0]?.toUpperCase() ?? "?"), // wrapper repos
+                .child(letter), // wrapper repos
             ),
           )
           .child(
             div()
               .min_w(0)
-              .max_w(150)
+              .when(Boolean(wr), (el) => el.flex_1()) // wrapper repos
+              .when(!wr, (el) => el.max_w(150))
               .truncate()
-              .tooltip(repos.length ? `${w.name}\n${folder}` : w.name) // wrapper repos
+              .tooltip(wr ? this.taskTip(w, wr) : w.name) // wrapper repos
               .text_color(t.foreground)
               .when(on, (el) => el.font_semibold()) // current highlight
               .child(label), // wrapper repos
           )
-          .child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1()),
+          .when(!wr, (el) => el.child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1())), // wrapper repos
       )
+      .when(Boolean(wr), (el) => el.child(this.taskLine(w, wr, tree, t))) // wrapper repos
       .children(ports.map((p) => this.portLine(p, ports.length > 1, tree, t))) // dev ports
-      .children(repos.map((r) => this.wrapperLine(r, prefixed, tree, t))) // wrapper repos
       .when(hasPRLine, (el) => el.child(this.prLine(w, t, Boolean(tree))));
   }
 
