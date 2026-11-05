@@ -71,9 +71,9 @@ function icon(p, size, color) {
 
 // status glow: the same row treatment as the Spaces list (better-spaces, from
 // filipores/herdr-spaces-status): done green, blocked orange, each with a faint fill
-// and layered outlines; working the same in yellow (the tab bar's agent color), breathing,
-// without the fill on the focused row, which keeps its cyan. Idle: nothing. Blocked is a
-// deeper orange than the original amber, which read as the working yellow.
+// and layered outlines; working a thin foreground contour that breathes, yellow (the tab
+// bar's agent color) and stronger when the agent is in the tab open on the right. Idle:
+// nothing. Blocked is a deeper orange than the original amber, which read as that yellow.
 const WORKING = "#facc15";
 const GLOW = { done: "#22c55e", blocked: "#f97316" };
 
@@ -87,17 +87,19 @@ function glow(status) {
   ];
 }
 
-function workPulse(id, current) {
-  return [
-    ...(current ? [] : [div().absolute().inset(0).rounded(8).bg(`${WORKING}1f`)]),
-    div().id(`ag-pulse-${id}`).absolute().inset(0)
-      .loop("opacity", { from: 0.45, to: 1, period: 1800, easing: "ease-in-out" })
-      .children(["cc", "59", "26", "10"].map((alpha, i) =>
-        div().absolute().inset(-i).rounded(8 + i).border(1).border_color(`${WORKING}${alpha}`))),
-  ];
+function workPulse(id, t, open) {
+  const [from, to, period] = open ? [0.45, 1, 1800] : [0.1, 0.24, 3200];
+  return div().id(`ag-pulse-${id}${open ? "-open" : ""}`).absolute().inset(0)
+    .loop("opacity", { from, to, period, easing: "ease-in-out" })
+    .children([1, 0.38, 0.16, 0.06].map((opacity, i) =>
+      div().absolute().inset(-i).rounded(8 + i).border(1).border_color(open ? WORKING : t.foreground).opacity(opacity)));
 }
 
-const statusGlow = (a) => [...(a.status === "working" ? workPulse(a.address, a.focused) : []), ...glow(a.status)];
+// open: the agent is in the tab shown on the right (here is focused()).
+const statusGlow = (a, t, here) => [
+  ...(a.status === "working" ? [workPulse(a.address, t, a.space === here?.space && a.tab === here?.tab)] : []),
+  ...glow(a.status),
+];
 
 // current highlight: as in the Spaces list, the focused agent's row is cyan, a tint and
 // a bar on the left, so it reads apart from the status outlines and the green space colors.
@@ -257,7 +259,8 @@ export default class Agents extends View {
     let list = agents();
     this.listed = new Map(list.map((a) => [a.address, a.status]));
     const all = terminals();
-    const shown = focused()?.agent;
+    const here = focused(); // status glow
+    const shown = here?.agent;
     const now = Date.now();
     this.track(list, now);
     this.hold(list);
@@ -363,7 +366,7 @@ export default class Agents extends View {
           .when(a.focused, (el) => el.bg(`${CURRENT}33`).child(currentBar())) // current highlight
           .hover((s) => s.bg(t.hover))
           .on_click(() => run("pane.focus", { pane: a.pane }))
-          .children(statusGlow(a)) // status glow
+          .children(statusGlow(a, t, here)) // status glow
           .child(div().flex_1().min_w(0).whitespace_nowrap().text_right().text_color(t.muted).child(String(i + 1)))
           .child(h_flex().w(14).flex_none().items_center().justify_center().child(this.status(t, a, true)));
       }
@@ -411,7 +414,7 @@ export default class Agents extends View {
           cx.notify();
         })
         .on_click(() => run("pane.focus", { pane: a.pane }))
-        .children(statusGlow(a)) // status glow
+        .children(statusGlow(a, t, here)) // status glow
         .when(Boolean(pic), el => el.child(div().id(`agent-fold-${a.address}`)
           .when(subs.length > 0, el => el.on_click((_e, cx) => {
             cx.stop_propagation();

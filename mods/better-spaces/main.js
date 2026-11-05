@@ -35,6 +35,7 @@ import {
   window,
   layout,
   home, // wrapper repos
+  focused, // status glow
 } from "herdr";
 
 function find(node, id) {
@@ -119,14 +120,14 @@ export function glyph(status) {
   return status === "blocked" || status === "done" ? "●" : "·";
 }
 
-// status glow: done is green, blocked orange; working is yellow, the agent color of the tab
-// bar (tabs-dev), and breathes. Blocked is a deeper orange than the original amber, which
-// read as the working yellow.
+// status glow: done is green, blocked orange; working is a separate neutral contour, yellow
+// (the agent color of the tab bar, tabs-dev) only where the working agent is open on the
+// right. Blocked is a deeper orange than the original amber, which read as that yellow.
 const WORKING = "#facc15";
 const GLOW = { done: "#22c55e", blocked: "#f97316" };
 
 export function tone(t, status) {
-  return GLOW[status] ?? (status === "working" ? WORKING : t[status]) ?? t.unknown;
+  return GLOW[status] ?? (status === "working" ? t.muted : t[status]) ?? t.unknown;
 }
 
 // status glow: layered translucent outlines (the renderer has no colored shadow).
@@ -146,28 +147,27 @@ function glow(status) {
   ];
 }
 
-// status glow: while an agent in the space works, a yellow fill (not on the current row,
-// which keeps its cyan) and layered yellow outlines that breathe, so a working space stands
-// out like a done or blocked one, and apart from them by moving.
-function workPulse(id, current) {
-  return [
-    ...(current ? [] : [div().absolute().inset(0).rounded(8).bg(`${WORKING}1f`)]),
-    div()
-      .id(`work-pulse-${id}`)
-      .absolute()
-      .inset(0)
-      .loop("opacity", { from: 0.45, to: 1, period: 1800, easing: "ease-in-out" })
-      .children(
-        ["cc", "59", "26", "10"].map((alpha, i) =>
-          div()
-            .absolute()
-            .inset(-i)
-            .rounded(8 + i)
-            .border(1)
-            .border_color(`${WORKING}${alpha}`),
-        ),
+// status glow: while an agent in the space works, a faint contour breathes. On the current
+// space with that agent in its open tab, so its terminal is on the right, the contour is
+// yellow and stronger, over the cyan: one yellow row at most, the one you're watching.
+function workPulse(id, t, open) {
+  const [from, to, period] = open ? [0.45, 1, 1800] : [0.1, 0.24, 3200];
+  return div()
+    .id(`work-pulse-${id}${open ? "-open" : ""}`)
+    .absolute()
+    .inset(0)
+    .loop("opacity", { from, to, period, easing: "ease-in-out" })
+    .children(
+      [1, 0.38, 0.16, 0.06].map((opacity, i) =>
+        div()
+          .absolute()
+          .inset(-i)
+          .rounded(8 + i)
+          .border(1)
+          .border_color(open ? WORKING : t.foreground)
+          .opacity(opacity),
       ),
-  ];
+    );
 }
 
 // current highlight: a plain selected background looked like the status outlines, and most
@@ -722,10 +722,14 @@ export default class Spaces extends View {
   // The rows, under a header per machine once one isn't this computer.
   grouped(t, collapsed) {
     const rows = this.ordered();
-    // status glow: spaces with a working agent, from agents() (not the aggregate status).
-    const working = new Set(agents().filter((a) => a.status === "working").map((a) => a.space));
+    // status glow: spaces with a working agent, from agents() (not the aggregate status), and
+    // whether one of them is in the tab open on the right.
+    const here = focused();
+    const busy = agents().filter((a) => a.status === "working");
+    const working = new Set(busy.map((a) => a.space));
+    const open = busy.some((a) => a.space === here?.space && a.tab === here?.tab) ? here.space : null;
     const draw = (r) => {
-      const row = { ...r, working: working.has(r.w.id) };
+      const row = { ...r, working: working.has(r.w.id) && (r.w.id === open ? "open" : true) };
       return collapsed ? this.compact(row, t) : this.row(row, t);
     };
     const remote = [
@@ -1040,7 +1044,7 @@ export default class Spaces extends View {
         cx.notify();
       })
       .on_mouse_down("right", () => this.menu(w))
-      .when(Boolean(working), (el) => el.children(workPulse(w.id, w.active))) // status glow
+      .when(Boolean(working), (el) => el.child(workPulse(w.id, t, working === "open"))) // status glow
       .children(glow(w.status)) // status glow
       .child(
         h_flex()
@@ -1095,7 +1099,7 @@ export default class Spaces extends View {
       .when(w.active, (el) => el.bg(`${CURRENT}33`).child(currentBar())) // current highlight
       .hover((s) => s.bg(t.hover))
       .on_click(() => run("space.select", { id: w.id }))
-      .when(Boolean(working), (el) => el.children(workPulse(w.id, w.active))) // status glow
+      .when(Boolean(working), (el) => el.child(workPulse(w.id, t, working === "open"))) // status glow
       .children(glow(w.status)) // status glow
       .child(
         div()
