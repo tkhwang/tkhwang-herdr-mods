@@ -172,6 +172,19 @@ function workPulse(id, t, open) {
     );
 }
 
+// space initials: a space's avatar shows the first letters of its name's first and last words
+// (tkhwang-herdr-mods TM, feature-cpq-task-a FA), one letter for a one-word name: a single
+// letter came out the same for most spaces of one project or owner. Kept in step with
+// agents-dev's copy.
+function initials(name) {
+  const words = (name ?? "")
+    .replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2")
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+  if (!words.length) return "?";
+  return ([...words[0]][0] + (words.length > 1 ? [...words.at(-1)][0] : "")).toUpperCase();
+}
+
 // current highlight: a plain selected background looked like the status outlines, and most
 // space colors are green or teal like the done glow, so the active row is cyan (clear of
 // the blocked orange, which yellow sat too close to): a tint and a bar on the left.
@@ -1004,10 +1017,9 @@ export default class Spaces extends View {
     const fill = color.startsWith("#") ? color : (AVATAR_COLORS[color] ?? t[color]);
     const ports = this.ports?.[w.id] ?? []; // dev ports
     // wrapper repos: a task row is named after its repo (one) or task folder (several) unless
-    // the person named the space, takes the row's width (its branch or project goes under it),
-    // and has its repo's or project's letter (task names mostly start with feat-/feature-).
+    // the person named the space, and takes the row's width (its branch or project goes under it).
     const label = wr && !w.named ? wr.name : w.name;
-    const letter = [...(wr ? (wr.repos.length === 1 ? wr.name : wr.project) : label)][0]?.toUpperCase() ?? "?";
+    const letter = initials(label); // space initials
     return v_flex()
       .relative()
       .id(`space-${w.id}`)
@@ -1072,10 +1084,10 @@ export default class Spaces extends View {
                 .bg(fill)
                 .items_center()
                 .justify_center()
-                .text_size(em(0.82))
+                .text_size(em(letter.length > 1 ? 0.66 : 0.82)) // space initials
                 .font_bold()
                 .text_color("#ffffff")
-                .child(letter), // wrapper repos
+                .child(letter), // space initials
             ),
           )
           .child(

@@ -101,6 +101,19 @@ const statusGlow = (a, t, here) => [
   ...glow(a.status),
 ];
 
+// space initials: a space's avatar shows the first letters of its name's first and last words
+// (tkhwang-herdr-mods TM, feature-cpq-task-a FA), one letter for a one-word name: a single
+// letter came out the same for most spaces of one project or owner. Kept in step with
+// better-spaces' copy.
+function initials(name) {
+  const words = (name ?? "")
+    .replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2")
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+  if (!words.length) return "?";
+  return ([...words[0]][0] + (words.length > 1 ? [...words.at(-1)][0] : "")).toUpperCase();
+}
+
 // current highlight: as in the Spaces list, the focused agent's row is cyan, a tint and
 // a bar on the left, so it reads apart from the status outlines and the green space colors.
 const CURRENT = "#22d3ee";
@@ -486,7 +499,7 @@ export default class Agents extends View {
       const label = spaceName(space, g.label);
       const single = wr?.repos.length === 1 ? wr.repos[0] : null;
       const branch = single?.branch ? (single.branch === "(detached)" ? "detached" : single.branch) : null; // none: not read yet
-      const letter = [...(wr ? (single ? wr.name : wr.project) : label)][0]?.toUpperCase() ?? "?";
+      const letter = initials(label); // space initials
       const name = div().min_w(0).truncate().text_size(12.5).font_semibold().text_color(t.foreground)
         .when(Boolean(wr), (el) => el.tooltip(`${label === wr.name ? "" : `${label}\n`}${wr.project} / ${wr.task}\n${wr.root}`))
         .child(label);
@@ -505,7 +518,7 @@ export default class Agents extends View {
           cx.notify();
         })
         .child(h_flex().size(16).flex_none().rounded(4).bg(spaceFill(space)).items_center().justify_center()
-          .text_size(9.5).font_bold().text_color("#ffffff").child(letter)) // wrapper repos
+          .text_size(letter.length > 1 ? 8 : 9.5).font_bold().text_color("#ffffff").child(letter)) // space initials
         .child(branch // wrapper repos
           ? v_flex().min_w(0).gap(1).child(name).child(h_flex().min_w(0).gap(4).items_center()
             .child(svg("mods/workspace-chrome/git-branch.svg").size(11).flex_none().text_color(t.dim))
