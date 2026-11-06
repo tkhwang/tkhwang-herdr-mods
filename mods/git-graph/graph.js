@@ -1,6 +1,8 @@
 // The graph itself: Git Graph's table (graph, description, date, author,
 // commit) for the focused pane's repository, or `props.folder` when opened as
 // a pane. Labels take double-clicks (checkout) and right-clicks (menus).
+// panel folder: in the side panel, the repository of the folder Files and Changes show too
+// (panel-folder.js), picked in the folder bar under the header, instead of the focused pane's.
 import { div, svg, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, v_virtual_list } from "gpui-base";
 import { spaces, panes, focused, exec, watchFolder, readTextFile, theme, settings, props, shared, setShared, openOverlay, home, notify, knownAgents, updates } from "herdr";
@@ -11,9 +13,14 @@ import { perform, openDialog, showChanges } from "./act.js";
 import { icon } from "./menu.js";
 import { available, check, openUpdate, newer } from "./update.js";
 import { depthOf, unsearched, findArgs, parseFound, REPO_STATUS, LATEST_TAG, FETCH, REMOTES, fetchable, parseRepoStatus, parseRemotes, webUrl, syncOf } from "./repos.js";
+import { panelFolder, folderBar } from "./panel-folder.js"; // panel folder
 
 function location(folder) {
   if (folder) return { cwd: folder, on: null };
+  // panel folder: the tab's main pane, or the pane or folder picked for the tab (a diff or Markdown
+  // viewer tab: the folder it was opened from), never just the focused pane.
+  const shown = panelFolder();
+  if (shown) return { cwd: shown.cwd, on: shown.on };
   const space = spaces().find((s) => s.active), f = focused();
   const pane = f?.pane ? panes().find((p) => p.pane === f.pane) : null;
   const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
@@ -839,9 +846,10 @@ export class Graph {
 
   empty(t) {
     const s = this.state, where = tilde(this.cwd, this.on);
-    const [glyph, title, body] = s === "nofolder" ? ["folder", "No folder", "Focus a terminal to see the history of the repository it's in."]
-      : s === "norepo" && this.skipped ? ["folder", "Not a git repository", `${where ?? "This folder"} isn't a repository, and is too big to search for them. Focus a terminal in a repository, or in a folder that holds some.`]
-      : s === "norepo" ? ["folder", "Not a git repository", `${where ?? "This folder"} isn't inside a git repository, and holds none within ${count(depthSetting(), "level")}. Focus a terminal in one, or search deeper in settings.`]
+    // panel folder: the panel follows the folder bar, not the focus, so the hints point there.
+    const [glyph, title, body] = s === "nofolder" ? ["folder", "No folder", "Open a terminal to see the history of the repository it's in."]
+      : s === "norepo" && this.skipped ? ["folder", "Not a git repository", `${where ?? "This folder"} isn't a repository, and is too big to search for them. ${this.folder ? "Focus a terminal in a repository, or in a folder that holds some." : "Pick a pane in a repository above, or a folder that holds some."}`]
+      : s === "norepo" ? ["folder", "Not a git repository", `${where ?? "This folder"} isn't inside a git repository, and holds none within ${count(depthSetting(), "level")}. ${this.folder ? "Focus a terminal in one" : "Pick a pane in one above"}, or search deeper in settings.`]
       : s === "empty" ? ["commit", "No commits yet", "Make the first commit and it shows up here."]
       : s === "error" ? ["graph", "Can't read the history", this.error]
       : ["graph", "Loading history…", ""];
@@ -865,6 +873,7 @@ export class Graph {
     const setting = `${depthSetting()} ${tagsShown()}`;
     if (setting !== this.seenSetting) { const first = this.seenSetting === undefined; this.seenSetting = setting; if (!first && !this.opened) this.refresh(cx); }
     const t = theme(), mono = settings().font_family ?? "JetBrains Mono", ready = this.state === "ready";
+    const folders = this.folder ? null : folderBar(t, "graph-folders"); // panel folder
     return v_flex().id("git-graph").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border)
       .text_color(t.foreground).text_size(12.5).track_focus(this.handle)
       .on_mouse_move((e, cx) => this.moveDrag(e, cx))
@@ -882,6 +891,7 @@ export class Graph {
         if (wide !== this.wide || graphMax !== this.graphMax) { this.wide = wide; this.graphMax = graphMax; cx.notify(); }
       })
       .child(this.header(t))
+      .when(Boolean(folders), (e) => e.child(folders)) // panel folder
       .when(this.state === "workspace", (e) => e.child(this.workspaceList(t)))
       .when(Boolean(this.picking && this.workspace && this.opened), (e) => e.child(this.picker(t)))
       .when(ready, (e) => e.child(this.toolbar(t)).child(this.columns(t, this.graphWidth())).child(this.list(t, mono))

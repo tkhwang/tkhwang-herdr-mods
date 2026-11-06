@@ -14,7 +14,7 @@
 # themes from their own repos at pinned commits (they have no license, so they aren't copied
 # here), and runs `herdr-app check` on every changed mod before any goes in. The app sees
 # a new mod folder only when it starts, so restart Herdr after a first apply, then pick the
-# layout with ⌘⇧L or `herdr-app do layout.switch '{"name":"main-dev"}'`.
+# layout with ⌘⇧L or `herdr-app do layout.switch '{"name":"tkhwang-herdr"}'`.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -28,11 +28,11 @@ live="${HERDR_APP_HOME:-$HOME/.config/herdr-app}"
 # and markdown-browser from ohneda/herdr-markdown-browser (MIT, see LICENSE-herdr-markdown-browser), whose
 # mod.json "place" is "none" here.
 mods="spaces-dev agents-dev changes-dev files-dev better-changes better-spaces tabs-dev herdr-open-with-zed git-graph markdown-browser"
-files="layouts/main-dev.json settings.json keys.json"
+files="layouts/tkhwang-herdr.json settings.json keys.json"
 # Third-party mod installed from its repo instead of kept here.
 cos_repo="jspoynor/herdr-copy-on-select"
 cos_sha="ea2304a28e3bda6812048ee556c592a558320aa2"
-# Catppuccin themes that layouts/main-dev.json names (Mocha dark, Latte light), installed from
+# Catppuccin themes that layouts/tkhwang-herdr.json names (Mocha dark, Latte light), installed from
 # their repo, each checked against its sha256. Only the themes: that repo's own layout swaps the
 # tab bar, spaces, agents and changes blocks for its own mods.
 cat_repo="MarcozVD/herdr-layout-catppuccin"
@@ -143,7 +143,7 @@ apply() {
     swap "$f"
     echo "installed $f"
   done
-  echo "restart Herdr if a mod folder was new, then switch to the main-dev layout (⌘⇧L)"
+  echo "restart Herdr if a mod folder was new, then switch to the tkhwang-herdr layout (⌘⇧L)"
 }
 
 case "${1:-}" in

@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="tkhwang-herdr-mods: a schematic of the Herdr app window that layouts/main-dev.json builds, each block tagged with the mod that fills it (better-spaces, agents-dev, tabs-dev, git-graph, better-changes, files-dev), and a terminal running ./sync.sh apply">
+  <img src="./assets/readme/hero.svg" width="100%" alt="tkhwang-herdr-mods: a schematic of the Herdr app window that layouts/tkhwang-herdr.json builds, each block tagged with the mod that fills it (better-spaces, agents-dev, tabs-dev, git-graph, better-changes, files-dev), and a terminal running ./sync.sh apply">
 </p>
 
-My [Herdr app](https://herdr.dev/core/) window, as files: the `main-dev` layout, clones of Herdr's own mods with small marked patches, and third-party mods kept with their licenses. Moved here from [tkhwang-dotfiles](https://github.com/tkhwang/tkhwang-dotfiles).
+My [Herdr app](https://herdr.dev/core/) window, as files: the `tkhwang-herdr` layout, clones of Herdr's own mods with small marked patches, and third-party mods kept with their licenses. Moved here from [tkhwang-dotfiles](https://github.com/tkhwang/tkhwang-dotfiles).
 
 ## Quick start
 
@@ -12,7 +12,7 @@ cd tkhwang-herdr-mods
 ./sync.sh apply
 ```
 
-After a first `apply`, restart Herdr (it sees new mod folders at start) and pick the `main-dev` layout with ⌘⇧L, or run `herdr-app do layout.switch '{"name":"main-dev"}'`. Every file `apply` replaces is moved to `~/.config/herdr-app.bak-<time>-<pid>/` first.
+After a first `apply`, restart Herdr (it sees new mod folders at start) and pick the `tkhwang-herdr` layout with ⌘⇧L, or run `herdr-app do layout.switch '{"name":"tkhwang-herdr"}'`. Every file `apply` replaces is moved to `~/.config/herdr-app.bak-<time>-<pid>/` first.
 
 ## What it changes
 
@@ -20,8 +20,9 @@ After a first `apply`, restart Herdr (it sees new mod folders at start) and pick
 | --- | --- |
 | **Spaces list**<br>`better-spaces` | branch and PR status per space, nested worktrees, workbranch tasks named after their repo with its branch (one repo) or their task folder with the project and only what differs (several repos), dev server ports, agent status glows (a breathing contour while an agent works, yellow where it's open on the right), a cyan current space |
 | **Agents list**<br>`agents-dev` | agents grouped under their space, nested rows, workbranch tasks named as in the Spaces list, the repo an agent is in for a multi-repo task, the same glows and highlight |
-| **Tab bar**<br>`tabs-dev` | yellow agent tabs, wider tabs, **Git** and **Markdown** buttons, a 3 \| 2 column switch |
+| **Tab bar**<br>`tabs-dev` | yellow agent tabs, wider tabs, **Git** and **Markdown** buttons, a [1] \| [1\|2] window switch |
 | **`+` menu**<br>`herdr-open-with-zed` | **Open with Zed** for the focused terminal's folder |
+| **Side panel**<br>`files-dev`, `better-changes`, `git-graph` | Files, Changes and Git show one folder, the tab's first pane (its main window), or a pane or folder picked in the folder bar under each panel's header; the focus no longer moves them |
 | **Side panel, Files**<br>`files-dev` | the previewed file feeds the **Markdown** button |
 | **Side panel, Changes**<br>`better-changes` | staged/unstaged groups, diffs, a repo picker in workbranch wrappers, AI commit messages, a Push button |
 | **Side panel, Git**<br>`git-graph` | a commit graph, or a Manygit list in a folder of repos |
@@ -58,7 +59,7 @@ Both copy only the mods and files named in `sync.sh` (`mods`, `files`, plus copy
 Each patch is marked with a comment, so `grep -rn "status glow" mods` finds every line of that patch.
 
 <details>
-<summary><b><code>layouts/main-dev.json</code></b> · the window</summary>
+<summary><b><code>layouts/tkhwang-herdr.json</code></b> · the window</summary>
 
 Clone of the shipped `main` layout; its spaces block points to `better-spaces`, its agents block to `agents-dev`, its Files block to `files-dev`, its Changes slot to `better-changes`, its tab bar to `tabs-dev`, and its side panel (`panel-body`) has a third block, `graph`, for `git-graph`. Its theme is Catppuccin: `herdr-catppuccin` (Mocha) in dark mode, `herdr-catppuccin-latte` in light mode.
 
@@ -103,11 +104,11 @@ Clone of the shipped tab bar whose `+` button opens `herdr-open-with-zed` (one r
 
 A tab with an agent in any of its panes is tinted yellow (`#facc15`), the color that stands out most since agent tabs matter most, while other tabs keep the theme's grey and are always outlined in the theme's foreground at 25% (40% when active, also filled), since the shipped tab bar draws inactive tabs as bare text and the theme's own border color almost vanishes against the bar (marked `tab kind`).
 
-A **Git** button beside Files and Changes opens `git-graph` in the same side panel (marked `git graph`; the panel's `graph` block is in `layouts/main-dev.json`).
+A **Git** button beside Files and Changes opens `git-graph` in the same side panel (marked `git graph`; the panel's `graph` block is in `layouts/tkhwang-herdr.json`).
 
 A **Markdown** button renders the Markdown file the open panel is on (Files' preview, or the file picked in Changes) in a `markdown-browser` tab in the center, one per space, switched in place on the next click and lit while that tab is shown; it stays dim until a Markdown file is picked (marked `markdown browser`; `markdown.js`, shared `markdown-tab.tabs`, `markdown-browser.show` and `markdown-browser.slots`).
 
-Right of `+`, a 3-column | 2-column switch: 2 columns zooms the shown tab's agent pane so the shell column folds away and the file panel keeps its room, also when switching tabs; a tab without an agent (`herdr-dev.sh`'s four-pane dev tab, a plain shell split) keeps all its panes, and a zoom 2 columns left there before comes undone when it is shown; 3 columns unzooms only the panes it zoomed, never one zoomed by hand (marked `view mode`; `columns-3.svg`, `columns-2.svg`, shared `tabs-dev.view` and `tabs-dev.view-zoomed`).
+Right of `+`, a [1] | [1|2] switch for a tab's main window, its first pane, and its secondary windows: each button is a small picture of the windows it shows, numbered as the folder bar numbers them. 1 zooms the main window so the secondary ones fold away, still running, and the file panel keeps its room, also when switching tabs and when an agent starting or ending in the shown tab changes whether it folds. 2 shows them side by side, and a click on 2 in a tab with only its main window splits it down the middle for a secondary shell in main's folder. 1 folds a tab with an agent, or one of main and a single secondary window; one with more windows and no agent (`herdr-dev.sh`'s four-pane dev tab) keeps them all, and a zoom 1 left there comes undone when it is shown. On their own the modes never touch a zoom done by hand, and a pane split in while a tab is folded stays in view. A click on either button, the lit one too, puts the shown tab in that mode: 2 unzooms any pane, and 1 folds the tab to its main window, moving a zoom done by hand (marked `view mode`; shared `tabs-dev.view` and `tabs-dev.view-zoomed`).
 
 </details>
 
@@ -119,18 +120,20 @@ Right of `+`, a 3-column | 2-column switch: 2 columns zooms the shown tab's agen
 </details>
 
 <details>
-<summary><b><code>files-dev</code></b> · side panel, Files · clone of Herdr's <code>files</code> 0.1.12</summary>
+<summary><b><code>files-dev</code></b> · side panel, Files · clone of Herdr's <code>files</code> 0.1.13</summary>
 
-**Markers:** `markdown tab`
+**Markers:** `markdown tab`, `panel folder`
 
-Clone of the shipped Files panel (0.1.12). It publishes the file its preview shows as the shared `files-dev.shown`, so the tab bar's **Markdown** button can render it, and while that Markdown viewer tab is the shown one it keeps listing the folder the file came from instead of jumping to the space folder (marked `markdown tab`; `markdown.js` is the same file as in `tabs-dev`).
+Clone of the shipped Files panel (0.1.13). It publishes the file its preview shows as the shared `files-dev.shown`, so the tab bar's **Markdown** button can render it, and while that Markdown viewer tab is the shown one it keeps listing the folder the file came from instead of jumping to the space folder (marked `markdown tab`; `markdown.js` is the same file as in `tabs-dev`).
+
+It lists the folder Changes and Git show too, with the folder bar under its header, instead of the focused pane's, and in the Changes diff tab it stays on the diff's repository (marked `panel folder`; `panel-folder.js`, below).
 
 </details>
 
 <details>
 <summary><b><code>better-changes</code></b> · side panel, Changes · <a href="https://github.com/munza/herdr-mods/tree/main/better-changes">munza/herdr-mods</a> at <code>77d94f7</code>, patched</summary>
 
-**Markers:** `wrapper repos`, `commit box`, `ai message`, `push button`, `markdown tab`
+**Markers:** `wrapper repos`, `commit box`, `ai message`, `push button`, `markdown tab`, `panel folder`
 
 [munza/herdr-mods](https://github.com/munza/herdr-mods/tree/main/better-changes) at `77d94f7` (staged/unstaged groups with stage buttons, tree/flat list, inline/side-by-side diff in one reusable tab), in the Changes slot. Patched with the same `wrapper repos` repo picker (it commits staged changes of the picked repo only), and `mod.json` `place` is `none` so it doesn't also dock a second right sidebar. The commit message is a text area (3 to 8 rows) with the buttons under it, Message, Commit and Push filling the row 1 : 2 : 1 (marked `commit box`; `BUTTON_WEIGHTS` at the top of `main.js`). They keep their look while the panel rereads git (every 10 s and on every file change), and a press during that runs as soon as it ends (`whenLoaded`).
 
@@ -140,12 +143,14 @@ A **Push** button right of Commit sends HEAD to its upstream branch, showing how
 
 `markdown.js` (marked `markdown tab`, the same file as in `tabs-dev`) keeps the panel on the repo it was on while the Markdown viewer tab is shown. `changes-dev` stays installed: put it back in the layout's `changes` block to switch.
 
+It reads the folder Files and Git show too, with the folder bar under its header, instead of the focused pane's; in a workbranch wrapper the repo picker stays under the folder bar (marked `panel folder`; `panel-folder.js`, below).
+
 </details>
 
 <details>
 <summary><b><code>git-graph</code></b> · side panel, Git · <a href="https://github.com/rabeeh-ta/herdr-git-graph">rabeeh-ta/herdr-git-graph</a> at <code>2226f57</code> (v0.3.0), patched</summary>
 
-**Markers:** `review fixes`
+**Markers:** `review fixes`, `panel folder`
 
 [rabeeh-ta/herdr-git-graph](https://github.com/rabeeh-ta/herdr-git-graph) at `2226f57` (v0.3.0): a commit graph of the focused terminal's repository after VS Code's Git Graph (colored lanes, branch/remote/tag labels, an uncommitted row, commit details and diffs; double-click a branch to check it out, right-click for checkout, merge, rebase, cherry pick, revert, reset, tag, branch, push, commit and stash, each asking first in a dialog), and in a folder of repositories (a workbranch wrapper) a Manygit list of them with branch, uncommitted count and ahead/behind. Opened from the tab bar's **Git** button into the side panel's `graph` block.
 
@@ -157,9 +162,24 @@ Patched with six fixes from this repo's review (marked `review fixes`):
 - A dialog stays open while its action runs.
 - The menu's first item can't be started twice.
 
+In the side panel it shows the folder Files and Changes show, with the folder bar under its header, instead of the focused terminal's, and its hints for a folder without a repository point at that bar; opened as a pane with a folder it keeps that folder (marked `panel folder`; `panel-folder.js`, below).
+
 It runs `git`, and for Manygit `find` and `env`; git reaches the network only on Fetch, Fetch all, Pull, Push or deleting a remote branch, and the mod itself asks GitHub's public releases API once a day for a newer release (**Stop checking** in its update window, or `CHECK = false` in `update.js`, turns that off). Herdr stops a command after 30 s, so a slow fetch or push can fail there.
 
-MIT ([`LICENSE-herdr-git-graph`](LICENSE-herdr-git-graph)); its icons follow Lucide, ISC (`mods/git-graph/icons/LICENSE-lucide.txt`). To update it, copy `mods/git-graph/` from that repo again, then re-apply the `review fixes` lines that the new release doesn't already cover.
+MIT ([`LICENSE-herdr-git-graph`](LICENSE-herdr-git-graph)); its icons follow Lucide, ISC (`mods/git-graph/icons/LICENSE-lucide.txt`). To update it, copy `mods/git-graph/` from that repo again, then re-apply the `panel folder` lines and the `review fixes` lines that the new release doesn't already cover.
+
+</details>
+
+<details>
+<summary><b><code>panel-folder.js</code></b> · one folder for Files, Changes and Git</summary>
+
+**Marker:** `panel folder`, in `files-dev`, `better-changes` and `git-graph`
+
+The shipped panels follow the focused pane, each on its own, so a click on a second or third pane, or the tab bar's view switch moving the focus, moved Files, Changes and Git to other folders. The three now show one folder for the shown tab, whatever has the focus: its main window's, the tab's first pane, which the tab bar's 1 shows.
+
+A folder bar under each panel's header has a chip for each folder the tab's panes are in, numbered by the first pane there and with its branch, and **Folder…**, which picks any folder on this machine in the system's folder picker (not in a space on another machine). The lit chip is the folder all three show. A click on another chip lights it in all three for that tab, until another pick: a picked pane is followed as it changes folder, and once it closes the main pane is back. Picks are kept by tab in the shared `panel-folder.picks`. The Changes diff tab and the Markdown viewer tab have no bar and keep the folder they were opened from.
+
+Herdr can list an agent's terminal in a folder other than the one the agent works in; **Folder…** shows the right one then. The same file lives in all three mods: change the copies together.
 
 </details>
 
@@ -186,7 +206,7 @@ Dev server ports under each space (`🧑 fe:3011 · be:5010`, `🤖` for agent-s
 
 **Markers:** `wrapper repos`
 
-In a workbranch wrapper folder (not a repo, repos right under it such as `backend/` and `frontend/`) a repo picker with per-repo change counts; commits go to the picked repo; patch marked `wrapper repos`.
+In a workbranch wrapper folder (not a repo, repos right under it such as `backend/` and `frontend/`) a repo picker with per-repo change counts; commits go to the picked repo; patch marked `wrapper repos`. Unlike `better-changes` it follows the focused pane, not the folder bar.
 
 </details>
 
@@ -213,7 +233,7 @@ App look and keys; `keys.json` also carries markdown-browser's `mod:markdown-bro
 
 ## Updating
 
-The `-dev` mods are `mod.clone`s of Herdr's own mods (version 0.1.11, `files-dev` 0.1.12, recorded as `cloned_from` in each `mod.json`), licensed Apache-2.0 ([`LICENSE-herdr`](LICENSE-herdr)). Clones get no Herdr updates: after an update changes a shipped mod, clone it again and re-apply the marked patch. `markdown.js` is one file kept in `tabs-dev`, `files-dev` and `better-changes`: change all three together.
+The `-dev` mods are `mod.clone`s of Herdr's own mods (version 0.1.11, `files-dev` 0.1.13, recorded as `cloned_from` in each `mod.json`), licensed Apache-2.0 ([`LICENSE-herdr`](LICENSE-herdr)). Clones get no Herdr updates: after an update changes a shipped mod, clone it again and re-apply the marked patch. `markdown.js` is one file kept in `tabs-dev`, `files-dev` and `better-changes`: change all three together. `panel-folder.js` likewise is one file kept in `files-dev`, `better-changes` and `git-graph`.
 
 `better-changes` and `better-spaces` are Apache-2.0 ([`LICENSE-herdr-mods`](LICENSE-herdr-mods), [`NOTICE-herdr-mods`](NOTICE-herdr-mods)). To update one, copy `<name>/mods/<name>/` from that repo and re-apply its marked patch (and for `better-changes` the `place` change).
 

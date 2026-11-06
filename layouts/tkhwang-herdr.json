@@ -1,10 +1,6 @@
 {
   "id": "r40df0346b95bf0c2b396a4d4f1820a77",
   "type": "column",
-  "theme": {
-    "light": "herdr-catppuccin-latte",
-    "dark": "herdr-catppuccin"
-  },
   "children": [
     {
       "id": "root",
@@ -190,8 +186,8 @@
       ],
       "background": "canvas",
       "theme": {
-        "light": "paper",
-        "dark": "ink"
+        "light": "herdr-catppuccin-latte",
+        "dark": "herdr-catppuccin"
       },
       "terminal_padding": [
         14,
