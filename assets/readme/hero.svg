@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
   <title id="title">tkhwang-herdr-mods: my Herdr app window, kept as files</title>
-  <desc id="desc">Schematic of the Herdr app window that layouts/tkhwang-herdr.json builds, in the Catppuccin Mocha theme. Each block carries a tag naming the mod in this repo that fills it: better-spaces and agents-dev in the sidebar, tabs-dev as the tab bar, and git-graph, better-changes and files-dev stacked in the side panel. The center pane is a terminal running ./sync.sh apply.</desc>
+  <desc id="desc">Schematic of the Herdr app window that layouts/tkhwang-herdr.json builds, in the Catppuccin Mocha theme. Each block carries a tag naming the mod in this repo that fills it: better-spaces and agents-dev in the sidebar, tabs-dev as the tab bar (tabs, then a 1 | 1|2 | 1|2/3 window switch, Files, Changes and Git buttons with their icons, and a Markdown icon), and git-graph, better-changes and files-dev stacked in the side panel. The center pane is a terminal running ./sync.sh apply.</desc>
 
   <defs>
     <style>
@@ -94,38 +94,74 @@
     <text class="m" x="290" y="601" font-size="15" fill="#7f849c" text-anchor="end">12m</text>
   </g>
 
-  <!-- Tab bar: tabs-dev -->
+  <!-- Tab bar: tabs-dev. Tabs on the left; on the right, as in the app: +, the 1 | 1|2 | 1|2/3
+       window switch (1 lit: the center shows the main window alone), Files, Changes and Git with
+       their icons (Git lit: the side panel shows git-graph), a thin line, and the Markdown icon. -->
   <g id="tabs">
-    <rect x="328" y="204" width="150" height="28" rx="7" fill="#facc15" fill-opacity="0.16" stroke="#facc15" stroke-opacity="0.7"/>
+    <rect x="328" y="204" width="124" height="27" rx="7" fill="#facc15" fill-opacity="0.16" stroke="#facc15" stroke-opacity="0.7"/>
     <text class="m" x="340" y="223" font-size="16" fill="#facc15">claude</text>
-    <circle cx="446" cy="218" r="3.5" fill="#facc15"/>
-    <text class="m" x="464" y="223" font-size="15" fill="#a6adc8" text-anchor="middle">×</text>
+    <circle cx="420" cy="217.5" r="3.5" fill="#facc15"/>
+    <text class="m" x="438" y="223" font-size="15" fill="#a6adc8" text-anchor="middle">×</text>
 
-    <rect x="486" y="204" width="120" height="28" rx="7" fill="none" stroke="#cdd6f4" stroke-opacity="0.25"/>
-    <text class="m" x="498" y="223" font-size="16" fill="#a6adc8">zsh</text>
-    <text class="m" x="592" y="223" font-size="15" fill="#7f849c" text-anchor="middle">×</text>
+    <rect x="458" y="204" width="90" height="27" rx="7" fill="none" stroke="#cdd6f4" stroke-opacity="0.25"/>
+    <text class="m" x="470" y="223" font-size="16" fill="#a6adc8">zsh</text>
+    <text class="m" x="534" y="223" font-size="15" fill="#7f849c" text-anchor="middle">×</text>
 
-    <rect x="620" y="205" width="120" height="28" rx="6" fill="#60b9fc"/>
-    <text class="m" x="632" y="225" font-size="20" font-weight="700" fill="#14151c">tabs-dev</text>
+    <rect x="560" y="203" width="120" height="29" rx="6" fill="#60b9fc"/>
+    <text class="m" x="572" y="224.5" font-size="20" font-weight="700" fill="#14151c">tabs-dev</text>
 
-    <!-- + menu, then the 3 | 2 column switch, then the panel buttons -->
-    <text class="m" x="790" y="225" font-size="20" fill="#a6adc8" text-anchor="middle">+</text>
+    <text class="m" x="706" y="225" font-size="20" fill="#a6adc8" text-anchor="middle">+</text>
 
-    <rect x="802" y="206" width="58" height="25" rx="6" fill="none" stroke="#cdd6f4" stroke-opacity="0.25"/>
-    <rect x="802" y="206" width="24" height="25" rx="6" fill="#60b9fc" fill-opacity="0.18"/>
-    <line x1="826" y1="206" x2="826" y2="231" stroke="#cdd6f4" stroke-opacity="0.25"/>
-    <rect x="807.5" y="211" width="13" height="15" rx="2.5" fill="none" stroke="#60b9fc" stroke-width="1.2"/>
-    <text class="m" x="814" y="222.5" font-size="10" font-weight="700" fill="#60b9fc" text-anchor="middle">1</text>
-    <rect x="832" y="211" width="22" height="15" rx="2.5" fill="none" stroke="#a6adc8" stroke-width="1.2"/>
-    <line x1="843" y1="211" x2="843" y2="226" stroke="#a6adc8" stroke-width="1.2"/>
-    <text class="m" x="837.5" y="222.5" font-size="10" font-weight="700" fill="#a6adc8" text-anchor="middle">1</text>
-    <text class="m" x="848.5" y="222.5" font-size="10" font-weight="700" fill="#a6adc8" text-anchor="middle">2</text>
+    <g id="view-switch">
+      <rect x="722" y="204" width="102" height="27" rx="6" fill="none" stroke="#cdd6f4" stroke-opacity="0.25"/>
+      <rect x="722" y="204" width="30" height="27" rx="6" fill="#60b9fc" fill-opacity="0.18"/>
+      <line x1="752" y1="204" x2="752" y2="231" stroke="#cdd6f4" stroke-opacity="0.25"/>
+      <line x1="788" y1="204" x2="788" y2="231" stroke="#cdd6f4" stroke-opacity="0.25"/>
+      <g class="m" font-weight="700" text-anchor="middle">
+        <rect x="729.5" y="209" width="15" height="17" rx="2.5" fill="none" stroke="#60b9fc" stroke-width="1.2"/>
+        <text x="737" y="221.5" font-size="11" fill="#60b9fc">1</text>
+        <g fill="#a6adc8">
+          <rect x="757" y="209" width="26" height="17" rx="2.5" fill="none" stroke="#a6adc8" stroke-width="1.2"/>
+          <line x1="770" y1="209" x2="770" y2="226" stroke="#a6adc8" stroke-width="1.2"/>
+          <text x="763.5" y="221.5" font-size="11">1</text>
+          <text x="776.5" y="221.5" font-size="11">2</text>
+          <rect x="793" y="209" width="26" height="17" rx="2.5" fill="none" stroke="#a6adc8" stroke-width="1.2"/>
+          <line x1="806" y1="209" x2="806" y2="226" stroke="#a6adc8" stroke-width="1.2"/>
+          <line x1="806" y1="217.5" x2="819" y2="217.5" stroke="#a6adc8" stroke-width="1.2"/>
+          <text x="799.5" y="221.5" font-size="11">1</text>
+          <text x="812.5" y="215.6" font-size="7.5">2</text>
+          <text x="812.5" y="224.4" font-size="7.5">3</text>
+        </g>
+      </g>
+    </g>
 
-    <text class="m" x="918" y="223" font-size="16" fill="#a6adc8" text-anchor="end">Files</text>
-    <text class="m" x="998" y="223" font-size="16" fill="#a6adc8" text-anchor="end">Changes</text>
-    <rect x="1010" y="206" width="45" height="25" rx="6" fill="#60b9fc" fill-opacity="0.18"/>
-    <text class="m" x="1047" y="223" font-size="16" fill="#60b9fc" text-anchor="end">Git</text>
-    <text class="m" x="1140" y="223" font-size="16" fill="#7f849c" text-anchor="end">Markdown</text>
+    <g id="panel-buttons" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <g transform="translate(838 208.5) scale(0.75)" stroke="#a6adc8">
+        <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
+        <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
+      </g>
+      <text class="m" x="862" y="223" font-size="16" fill="#a6adc8" stroke="none">Files</text>
+
+      <g transform="translate(922 208.5) scale(0.75)" stroke="#a6adc8">
+        <circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/>
+        <path d="M6 8.2V14a4 4 0 0 0 4 4h5.8M13 15l2.8 3-2.8 3"/>
+      </g>
+      <text class="m" x="946" y="223" font-size="16" fill="#a6adc8" stroke="none">Changes</text>
+
+      <rect x="1022" y="204" width="68" height="27" rx="6" fill="#60b9fc" fill-opacity="0.18" stroke="none"/>
+      <g transform="translate(1029 208.5) scale(0.75)" stroke="#60b9fc">
+        <circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="12" r="2.2"/>
+        <path d="M6 7.2v9.6M15.8 12H12a6 6 0 0 1-6-6"/>
+      </g>
+      <text class="m" x="1053" y="223" font-size="16" fill="#60b9fc" stroke="none">Git</text>
+
+      <line x1="1101" y1="210" x2="1101" y2="225" stroke="#cdd6f4" stroke-opacity="0.25" stroke-width="1"/>
+      <g transform="translate(1111.5 207) scale(0.875)" stroke="#7f849c">
+        <rect x="2" y="5" width="20" height="14" rx="2"/>
+        <path d="M6 15V9l3 3 3-3v6"/>
+        <path d="M17 9v6M15 13l2 2 2-2"/>
+      </g>
+    </g>
   </g>
 
   <!-- Center pane: the active tab, a terminal -->
