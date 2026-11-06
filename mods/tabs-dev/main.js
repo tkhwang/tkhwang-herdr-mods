@@ -291,14 +291,18 @@ export default class Tabs extends View {
     };
     // markdown browser: the Markdown button renders the file picked in the open panel (Files'
     // preview, or the Changes selection) in this space's viewer tab; lit while that tab is shown.
+    // Less used than Files, Changes and Git, it is an icon alone after them, past a thin line, so
+    // the three keep the eye; the tooltip names it.
     const md = markdownTarget(space, body?.active), mdTab = markdownTab(space?.id)?.tab;
     const mdOn = Boolean(mdTab) && Boolean(space?.tabs?.some(c => c.id === mdTab && c.active));
-    const markdownButton = h_flex().id("panel-markdown").h(26).px(8).gap(5).flex_none().items_center().rounded(6)
-      .text_size(12).bg(mdOn ? t.selected : t.chrome).text_color(mdOn ? t.foreground : md ? t.muted : t.dim)
-      .tooltip(md ? `Render ${md.file.split("/").pop()}` : "Pick a Markdown file in Files or Changes first")
+    const mdLabel = md ? `Markdown: render ${md.file.split("/").pop()}` : "Markdown: pick a Markdown file in Files or Changes first";
+    const markdownDivider = div().w(1).h(14).mx(3).flex_none().bg(withAlpha(t.foreground, OUTLINE[0], t.dim));
+    const markdownButton = div().id("panel-markdown").size(26).flex_none().flex().items_center().justify_center().rounded(6)
+      .bg(mdOn ? t.selected : t.chrome).text_color(mdOn ? t.foreground : md ? t.muted : t.dim)
+      .tooltip(mdLabel).accessibility_label(mdLabel)
       .on_mouse_down("left", stop)
-      .when(Boolean(md), el => el.hover(s => s.bg(t.hover)).on_click((_e, cx) => showMarkdown(md, cx)))
-      .child(svg("mods/markdown-browser/markdown.svg").size(14)).child("Markdown");
+      .when(Boolean(md), el => el.hover(s => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => showMarkdown(md, cx)))
+      .child(svg("mods/markdown-browser/markdown.svg").size(16));
     // view mode: a [1] | [1|2] | [1|2/3] switch right of + (Mobile | Desktop | Triple inside): a
     // little picture of the tab's windows, numbered as the folder bar numbers them: 1 the main
     // window alone, 2 the secondary window beside it, 3 another under 2. The mode you are in is
@@ -338,7 +342,7 @@ export default class Tabs extends View {
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
       .child(panelButton("graph", "Git", "mods/git-graph/icons/graph.svg")) // git graph
-      .child(markdownButton) // markdown browser
+      .child(markdownDivider).child(markdownButton) // markdown browser
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs-dev/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/tabs-dev/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
         .child(button("close-window", w.platform === "windows" ? svg("mods/tabs-dev/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));
