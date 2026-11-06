@@ -108,18 +108,25 @@
     <rect x="620" y="205" width="120" height="28" rx="6" fill="#60b9fc"/>
     <text class="m" x="632" y="225" font-size="20" font-weight="700" fill="#14151c">tabs-dev</text>
 
-    <!-- + menu, then the 3 | 2 column switch, then the panel buttons -->
-    <text class="m" x="790" y="225" font-size="20" fill="#a6adc8" text-anchor="middle">+</text>
+    <!-- + menu, then the 1 | 1|2 | 1|2/3 window switch, then the panel buttons -->
+    <text class="m" x="760" y="225" font-size="20" fill="#a6adc8" text-anchor="middle">+</text>
 
-    <rect x="802" y="206" width="58" height="25" rx="6" fill="none" stroke="#cdd6f4" stroke-opacity="0.25"/>
-    <rect x="802" y="206" width="24" height="25" rx="6" fill="#60b9fc" fill-opacity="0.18"/>
-    <line x1="826" y1="206" x2="826" y2="231" stroke="#cdd6f4" stroke-opacity="0.25"/>
-    <rect x="807.5" y="211" width="13" height="15" rx="2.5" fill="none" stroke="#60b9fc" stroke-width="1.2"/>
-    <text class="m" x="814" y="222.5" font-size="10" font-weight="700" fill="#60b9fc" text-anchor="middle">1</text>
-    <rect x="832" y="211" width="22" height="15" rx="2.5" fill="none" stroke="#a6adc8" stroke-width="1.2"/>
-    <line x1="843" y1="211" x2="843" y2="226" stroke="#a6adc8" stroke-width="1.2"/>
-    <text class="m" x="837.5" y="222.5" font-size="10" font-weight="700" fill="#a6adc8" text-anchor="middle">1</text>
-    <text class="m" x="848.5" y="222.5" font-size="10" font-weight="700" fill="#a6adc8" text-anchor="middle">2</text>
+    <rect x="772" y="206" width="88" height="25" rx="6" fill="none" stroke="#cdd6f4" stroke-opacity="0.25"/>
+    <rect x="772" y="206" width="24" height="25" rx="6" fill="#60b9fc" fill-opacity="0.18"/>
+    <line x1="796" y1="206" x2="796" y2="231" stroke="#cdd6f4" stroke-opacity="0.25"/>
+    <rect x="777.5" y="211" width="13" height="15" rx="2.5" fill="none" stroke="#60b9fc" stroke-width="1.2"/>
+    <text class="m" x="784" y="222.5" font-size="10" font-weight="700" fill="#60b9fc" text-anchor="middle">1</text>
+    <rect x="801" y="211" width="22" height="15" rx="2.5" fill="none" stroke="#a6adc8" stroke-width="1.2"/>
+    <line x1="812" y1="211" x2="812" y2="226" stroke="#a6adc8" stroke-width="1.2"/>
+    <text class="m" x="806.5" y="222.5" font-size="10" font-weight="700" fill="#a6adc8" text-anchor="middle">1</text>
+    <text class="m" x="817.5" y="222.5" font-size="10" font-weight="700" fill="#a6adc8" text-anchor="middle">2</text>
+    <line x1="828" y1="206" x2="828" y2="231" stroke="#cdd6f4" stroke-opacity="0.25"/>
+    <rect x="833" y="211" width="22" height="15" rx="2.5" fill="none" stroke="#a6adc8" stroke-width="1.2"/>
+    <line x1="844" y1="211" x2="844" y2="226" stroke="#a6adc8" stroke-width="1.2"/>
+    <line x1="844" y1="218.5" x2="855" y2="218.5" stroke="#a6adc8" stroke-width="1.2"/>
+    <text class="m" x="838.5" y="222.5" font-size="10" font-weight="700" fill="#a6adc8" text-anchor="middle">1</text>
+    <text class="m" x="849.5" y="216.8" font-size="6.5" font-weight="700" fill="#a6adc8" text-anchor="middle">2</text>
+    <text class="m" x="849.5" y="224.6" font-size="6.5" font-weight="700" fill="#a6adc8" text-anchor="middle">3</text>
 
     <text class="m" x="918" y="223" font-size="16" fill="#a6adc8" text-anchor="end">Files</text>
     <text class="m" x="998" y="223" font-size="16" fill="#a6adc8" text-anchor="end">Changes</text>
