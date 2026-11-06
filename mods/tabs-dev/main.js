@@ -64,13 +64,14 @@ export default class Tabs extends View {
   init() {
     this.pressed = null;
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
+    this.opening = new Map(); // view mode: tab id → when a click on 2 asked for its secondary window
   }
 
   // view mode: looks at the shown tab again when the mode, the tab, or the agent in it changes
   // (one started in a shell there, or one that ended), never on a zoom the person did by hand.
   syncView(space) {
-    // The pane a click on 2 opened has come, or its tab has gone: the next click may open one.
-    if (this.opening && windowsOf(panes().filter(p => p.tab === this.opening.tab)).length !== 1) this.opening = null;
+    // A tab whose pane a click on 2 opened has it now, or is gone: the next click there may open one.
+    for (const tab of this.opening.keys()) if (windowsOf(panes().filter(p => p.tab === tab)).length !== 1) this.opening.delete(tab);
     const tab = space?.tabs?.find(c => c.active)?.id, inTab = tab ? panes().filter(p => p.tab === tab) : [];
     if (!inTab.length) return; // panes not in yet (a fresh start): look again on the next render
     const key = viewKey(tab, viewMode(), inTab);
@@ -88,12 +89,12 @@ export default class Tabs extends View {
     const tab = space?.tabs?.find(c => c.active)?.id, inTab = tab ? panes().filter(p => p.tab === tab) : [];
     if (!inTab.length) return;
     this.applyView(inTab, mode, true);
-    // A second click while the new pane is still on its way doesn't open another. On another
-    // machine it can take a while, so this holds until the pane comes (syncView lets go then),
-    // or for 10 s should it never come.
+    // A second click while the new pane is still on its way doesn't open another, in each tab on
+    // its own. On another machine it can take a while, so this holds until the pane comes
+    // (syncView lets go then), or for 10 s should it never come.
     const windows = windowsOf(inTab), now = Date.now();
-    if (mode === "desktop" && windows.length === 1 && !(this.opening?.tab === tab && now - this.opening.at < 10000)) {
-      this.opening = { tab, at: now };
+    if (mode === "desktop" && windows.length === 1 && !(this.opening.has(tab) && now - this.opening.get(tab) < 10000)) {
+      this.opening.set(tab, now);
       run("pane.focus", { pane: windows[0].pane });
       run("terminal.open", windows[0].cwd ? { place: "right", folder: windows[0].cwd } : { place: "right" });
     }
