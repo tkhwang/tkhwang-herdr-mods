@@ -438,7 +438,9 @@ export default class Changes extends View {
   // push button: where Push sends HEAD. With an upstream branch on a remote, HEAD goes to that
   // branch, and the counts say how far it is ahead and behind as of the last fetch. Without one
   // (or with one that is gone), the branch goes to its remote, else origin, else the only remote,
-  // under its own name, and is tracked from then on. Null on a detached HEAD.
+  // under its own name, and is tracked from then on; `ahead` is then what that remote lacks, so a
+  // branch with nothing new (one just made, or pushed from a terminal without -u) has nothing to
+  // push either. Null on a detached HEAD.
   async pushTarget(git) {
     const head = await git(["symbolic-ref", "-q", "--short", "HEAD"]);
     if (head.code !== 0) return null;
@@ -461,7 +463,17 @@ export default class Changes extends View {
     const remotes = await git(["remote"]);
     const names = remotes.code === 0 ? remotes.stdout.split("\n").map((s) => s.trim()).filter(Boolean) : [];
     const to = names.includes(remote) ? remote : names.includes("origin") ? "origin" : names.length === 1 ? names[0] : null;
-    return { branch, remote: to, tracked: false };
+    if (!to) return { branch, remote: null, tracked: false };
+    // Ahead of the remote's branch of this name when it has one (where `push -u` goes), else of
+    // every branch the remote has, so a branch just made off one of them counts as nothing to push.
+    const same = await git(["rev-parse", "-q", "--verify", `refs/remotes/${to}/${branch}`]);
+    if (same.code === 0) {
+      const counts = await git(["rev-list", "--count", "--left-right", `refs/remotes/${to}/${branch}...HEAD`]);
+      const [behind, ahead] = counts.code === 0 ? counts.stdout.trim().split(/\s+/).map(Number) : [null, null];
+      return { branch, remote: to, name: `${to}/${branch}`, ahead, behind, tracked: false };
+    }
+    const count = await git(["rev-list", "--count", "HEAD", "--not", `--remotes=${to}`]);
+    return { branch, remote: to, ahead: count.code === 0 ? Number(count.stdout.trim()) : null, tracked: false };
   }
 
   watch(root, cx) {
@@ -778,7 +790,7 @@ export default class Changes extends View {
     const p = this.pushTo;
     return Boolean(
       p?.remote &&
-      (!p.tracked || p.ahead > 0) &&
+      (p.ahead ?? 1) > 0 && // an unread count still lets a push try
       this.root &&
       this.contextKey() === this.context &&
       this.mode === "sidebar",
@@ -1330,6 +1342,7 @@ export default class Changes extends View {
     const enabled = this.pushReady() && !this.busy;
     const solid = enabled && !commitEnabled;
     const plural = (n) => `${n} commit${n === 1 ? "" : "s"}`;
+    const lag = p?.behind ? ` (${p.name} has ${plural(p.behind)} you don't: pull first if it's rejected)` : "";
     const tip = pushing
       ? `Pushing to ${this.pushLabel()}…`
       : !this.root
@@ -1343,10 +1356,12 @@ export default class Changes extends View {
               : !p.remote
                 ? "No remote to push to"
                 : !p.tracked
-                  ? `Push ${p.branch} to ${p.remote} and track it`
+                  ? p.ahead === 0
+                    ? `Nothing to push: ${p.name ?? p.remote} has every commit of ${p.branch} (as of the last fetch)`
+                    : `Push ${p.branch} to ${p.remote} and track it` +
+                      (p.ahead ? `: ${plural(p.ahead)} ${p.name ?? p.remote} doesn't have` : "") + lag
                   : p.ahead
-                    ? `Push ${plural(p.ahead)} to ${p.name}` +
-                      (p.behind ? ` (${p.name} has ${plural(p.behind)} you don't: pull first if it's rejected)` : "")
+                    ? `Push ${plural(p.ahead)} to ${p.name}` + lag
                     : `Nothing to push: ${p.branch} is not ahead of ${p.name} (as of the last fetch)`;
     return div()
       .id("changes-push")
@@ -1377,7 +1392,7 @@ export default class Changes extends View {
           ? svg("mods/workspace-chrome/spinner.svg").size(14).flex_none().text_color(t.accent).spin(900)
           : svg("mods/better-changes/push.svg").size(14).flex_none(),
       )
-      .child(buttonLabel(pushing ? "Pushing…" : p?.tracked && p.ahead ? `Push ↑${p.ahead}` : "Push"));
+      .child(buttonLabel(pushing ? "Pushing…" : p?.ahead ? `Push ↑${p.ahead}` : "Push"));
   }
 
   renderCommitFooter(t, repo = null) {
