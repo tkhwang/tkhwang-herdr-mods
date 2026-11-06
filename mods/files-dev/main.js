@@ -1,11 +1,14 @@
 // A lazy file browser for the focused pane's folder, with bounded read-only previews.
-// Cloned from Herdr's files 0.1.12: the previewed file is published as shared "files-dev.shown" so
+// Cloned from Herdr's files 0.1.13: the previewed file is published as shared "files-dev.shown" so
 // the tab bar's Markdown button can render it, and the folder stays put while that viewer tab is
-// shown (marked "markdown tab", with markdown.js).
+// shown (marked "markdown tab", with markdown.js); the folder is the one Changes and Git show too,
+// with the folder bar under the header, instead of the focused pane's (marked "panel folder", with
+// panel-folder.js).
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, shared, setShared } from "herdr";
 import { markdownTab } from "./markdown.js"; // markdown tab
+import { panelFolder, folderBar } from "./panel-folder.js"; // panel folder
 
 function location() {
   const space = spaces().find(s => s.active), f = focused();
@@ -14,6 +17,10 @@ function location() {
   // markdown tab: the viewer tab has no terminal; keep showing the folder its file was opened from.
   const md = markdownTab(space?.id);
   if (md?.cwd && !pane?.cwd && md.tab === space?.tabs?.find(t => t.active)?.id) return { cwd: md.cwd, on: md.on ?? null, space: space?.id };
+  // panel folder: the tab's main pane, or the pane or folder picked for the tab (the Changes diff
+  // tab: the repository it was opened from), as Changes and Git show it, never just the focused pane.
+  const shown = panelFolder();
+  if (shown) return { cwd: shown.cwd, on: shown.on, space: space?.id };
   return { cwd: pane?.cwd || f?.cwd || space?.folder, on, space: space?.id };
 }
 const key = () => JSON.stringify(location());
@@ -21,16 +28,24 @@ const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", 
 const PER_FOLDER = 500, TOTAL = 5000;
 
 async function directory(path, on) {
-  if (!on && window()?.platform === "windows") {
+  const windowsDirectory = async () => {
     // Windows PowerShell otherwise uses the console code page; exec decodes UTF-8.
-    // Reparse points keep directory attributes even when dangling; check their target.
-    const r = await exec("powershell", ["-NoProfile", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); & { param($p) @(Get-ChildItem -LiteralPath $p -Force -ErrorAction Stop | Where-Object Name -ne '.git' | Select-Object -First 501 | ForEach-Object { @{ name=$_.Name; dir=($_.PSIsContainer -and (-not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -or ($_.Target -and [IO.Directory]::Exists(([IO.Path]::Combine([IO.Path]::GetDirectoryName($_.FullName), $_.Target[0])))))) } }) | ConvertTo-Json -Compress } '" + path.replaceAll("'", "''") + "'"]);
+    // Links keep directory attributes even when dangling; check their target.
+    // Other reparse points (OneDrive's folders) have no LinkType and are folders.
+    // PowerShell reads curly single quotes as quotes too, so they're doubled like '.
+    const r = await exec("powershell", ["-NoProfile", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); & { param($p) @(Get-ChildItem -LiteralPath $p -Force -ErrorAction Stop | Where-Object Name -ne '.git' | Select-Object -First 501 | ForEach-Object { @{ name=$_.Name; dir=($_.PSIsContainer -and (-not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $_.LinkType -or ($_.Target -and [IO.Directory]::Exists(([IO.Path]::Combine([IO.Path]::GetDirectoryName($_.FullName), $_.Target[0])))))) } }) | ConvertTo-Json -Compress } '" + path.replace(/['‘’‚‛]/g, "$&$&") + "'"], { on });
     if (r.code !== 0) throw new Error(r.stderr || "Cannot list this folder");
     const result = JSON.parse(r.stdout || "[]");
     return Array.isArray(result) ? result : [result];
-  }
+  };
+  if (!on && window()?.platform === "windows") return windowsDirectory();
   const script = 'n=0; for p in "$1"/* "$1"/.[!.]* "$1"/..?*; do [ -e "$p" ] || [ -L "$p" ] || continue; name=${p##*/}; [ "$name" = .git ] && continue; if [ -d "$p" ]; then kind=d; else kind=f; fi; printf "%s\\0%s\\0" "$kind" "$name"; n=$((n+1)); [ "$n" -gt 500 ] && break; done; test -d "$1"';
-  const r = await exec("sh", ["-c", script, "files", path], { on });
+  let r;
+  try { r = await exec("sh", ["-c", script, "files", path], { on }); }
+  catch (e) {
+    if (on && String(e).includes("cannot start sh: program not found")) return windowsDirectory();
+    throw e;
+  }
   if (r.code !== 0) throw new Error(r.stderr || "Cannot list this folder");
   const fields = r.stdout.split("\0"), out = [];
   for (let i = 0; i + 1 < fields.length; i += 2) out.push({ name: fields[i + 1], dir: fields[i] === "d" });
@@ -167,12 +182,13 @@ export default class Files extends View {
 
   render(cx) {
     if (key() !== this.context?.key) this.refresh(cx);
-    const t = theme();
+    const t = theme(), folders = folderBar(t, "files-folders"); // panel folder
     return v_flex().id("files").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
         .when(Boolean(this.file), el => el.child(div().id("files-back").w(20).cursor_pointer().text_color(t.muted).on_click((_e, cx) => { this.show(null); cx.notify(); }).child("←")))
         .child(div().font_semibold().child("Files"))
         .child(div().flex_1().min_w(0).truncate().text_right().text_size(12).text_color(t.dim).child(this.file ?? this.root?.split(/[\\/]/).pop() ?? "")))
+      .when(Boolean(folders), el => el.child(folders)) // panel folder
       .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6).children(this.rows("", 0, [], t))
         .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
         .when(this.limited, el => el.child(div().p(8).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total")))))

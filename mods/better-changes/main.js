@@ -2,12 +2,14 @@
 // (code marked "wrapper repos"), a multi-line commit message box with the buttons under it
 // (marked "commit box"), a button that asks an AI for the commit message (marked "ai message"),
 // a Push button beside Commit (marked "push button"), the folder kept while the tab bar's Markdown viewer tab is shown (marked "markdown tab", with
-// markdown.js), and mod.json "place" is "none" (it sits in the Changes slot).
+// markdown.js), the folder Files and Git show too, with the folder bar under the header (marked "panel folder", with
+// panel-folder.js), and mod.json "place" is "none" (it sits in the Changes slot).
 // Sidebar status/commit controls and a reusable diff-tab view share this class.
 // Pure Git-output parsing and diff-row transformations live in model.js.
 import { em, codeFont } from "./typography.js";
 import { changedFiles, fileTree, diffRows, splitDiffRows, aiPrompt, aiMessage } from "./model.js";
 import { markdownTab } from "./markdown.js"; // markdown tab
+import { panelFolder, folderBar } from "./panel-folder.js"; // panel folder
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea, Scrollbar, v_virtual_list } from "gpui-base";
 import {
@@ -65,8 +67,9 @@ const CHILD_REPOS = 'for d in */ .[!.]*/; do [ -e "$d.git" ] && printf "%s\\n" "
 // machine and folder. A local folder's key is its path alone.
 const pickKey = (cwd, on) => (on ? `${on}\0${cwd}` : cwd);
 
-// Follow the active terminal unless the active tab is our diff viewer. Mod panes
-// have no terminal cwd, so that case must use the repository saved for the tab.
+// panel folder: follow the folder all three side panels show (panel-folder.js) unless the active
+// tab is our diff viewer. Mod panes have no terminal cwd, so that case must use the repository
+// saved for the tab.
 // wrapper repos: `diffTab` says the location is that saved repository.
 function locate() {
   const space = spaces().find((s) => s.active);
@@ -82,15 +85,13 @@ function locate() {
     const md = markdownTab(space?.id);
     if (md && md.tab === tab && md.cwd) return { loc: { cwd: md.cwd, on: md.on ?? null }, diffTab: true };
   }
+  // panel folder: the tab's main pane, or the pane or folder picked for the tab, never just
+  // the focused pane: the panel holds still as the focus moves, and shows what Files and Git show.
+  const shown = panelFolder();
   return {
-    loc: {
-      cwd:
-        candidates.find((p) => p.focused)?.cwd ??
-        candidates[0]?.cwd ??
-        focused()?.cwd ??
-        space?.folder,
-      on: space?.machine ?? null,
-    },
+    loc: shown
+      ? { cwd: shown.cwd, on: shown.on }
+      : { cwd: focused()?.cwd ?? space?.folder, on: space?.machine ?? null },
     diffTab: false,
   };
 }
@@ -1043,6 +1044,9 @@ export default class Changes extends View {
       .text_size(em(1));
     if (this.mode === "diff") return this.renderDiff(root, t);
     root.child(this.renderSidebarHeader(t));
+    // panel folder: which pane's folder, or which folder, the three panels show.
+    const folders = this.source ? null : folderBar(t, "changes-folders");
+    if (folders) root.child(folders);
     // wrapper repos
     const wrapper = this.source ? null : this.wrapperSpot().wrapper;
     if (wrapper) root.child(this.renderRepoBar(wrapper, t));

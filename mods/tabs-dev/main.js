@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, run, openOverlay, theme, window, shared, setShared, layout, settings } from "herdr";
+import { spaces, panes, machines, run, openOverlay, theme, window, shared, setShared, layout, settings } from "herdr";
 import { MARKDOWN, markdownTab, showMarkdown } from "./markdown.js"; // markdown browser
 
 // markdown browser: the Markdown file the open panel is on: Files' preview (files-dev publishes it
@@ -18,13 +18,23 @@ function markdownTarget(space, active) {
   return null;
 }
 
-// view mode: Desktop shows a tab's panes side by side (agent | shell | file panel); Mobile shows
-// an agent's tab as that one pane, zoomed, so the shell column folds away and the file panel keeps
-// its room. A tab without an agent keeps all its panes in both. Shared, so it survives restarts; the panes Mobile zoomed are
-// remembered so Desktop unzooms exactly those.
+// view mode: the switch's 1 ("mobile") shows a tab's main window, its first pane, alone and
+// zoomed, so the secondary windows fold away (they keep running) and the file panel keeps its
+// room; its 2 ("desktop") shows them side by side, and a click on 2 in a tab with only its main
+// window splits it to make the secondary one. 1 folds a tab with an agent, or a tab of main and
+// one secondary window; others (herdr-dev.sh's four-pane dev tab) keep all their panes. Shared,
+// so it survives restarts; the panes 1 zoomed are remembered so 2 unzooms exactly those on its
+// own (a click on 2 unzooms any).
 const VIEW = "tabs-dev.view";
 const VIEW_ZOOMED = "tabs-dev.view-zoomed";
 const viewMode = () => (shared(VIEW) === "mobile" ? "mobile" : "desktop");
+// A tab's windows (terminal panes) in pane order, the first being its main window.
+const windowsOf = (inTab) => inTab.filter(p => p.terminal);
+const agentOf = (inTab) => inTab.find(p => p.program?.agent || p.status) ?? null;
+// Whether 1 folds the tab to its main window.
+const folds = (inTab) => { const n = windowsOf(inTab).length; return n === 2 || (n > 2 && Boolean(agentOf(inTab))); };
+// What a look at the shown tab depends on: an agent starting or ending there changes it.
+const viewKey = (tab, mode, inTab) => `${mode}\0${tab}\0${agentOf(inTab)?.pane ?? ""}`;
 
 // tab width: a minimum, so a short name still gives a wide click target.
 // A longer name still widens the tab (the name itself caps at 170).
@@ -54,38 +64,68 @@ export default class Tabs extends View {
   init() {
     this.pressed = null;
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
+    this.opening = new Map(); // view mode: tab id → when a click on 2 asked for its secondary window
+  }
+
+  // view mode: looks at the shown tab again when the mode, the tab, or the agent in it changes
+  // (one started in a shell there, or one that ended), never on a zoom the person did by hand.
+  syncView(space) {
+    // A tab whose pane a click on 2 opened has it now, or is gone: the next click there may open one.
+    for (const tab of this.opening.keys()) if (windowsOf(panes().filter(p => p.tab === tab)).length !== 1) this.opening.delete(tab);
+    const tab = space?.tabs?.find(c => c.active)?.id, inTab = tab ? panes().filter(p => p.tab === tab) : [];
+    if (!inTab.length) return; // panes not in yet (a fresh start): look again on the next render
+    const key = viewKey(tab, viewMode(), inTab);
+    if (key === this.viewKey) return;
+    this.viewKey = key;
+    this.applyView(inTab, viewMode(), false);
+  }
+
+  // view mode: a click on the switch puts the shown tab in that mode even when the mode is on
+  // already (a tab split since it was folded folds then), over a zoom done by hand too: 2 shows
+  // every pane, 1 the main window. A click on 2 in a tab with only its main window gives it its
+  // secondary window: main split down the middle, the new shell starting in main's folder.
+  chooseView(space, mode) {
+    if (viewMode() !== mode) setShared(VIEW, mode);
+    const tab = space?.tabs?.find(c => c.active)?.id, inTab = tab ? panes().filter(p => p.tab === tab) : [];
+    if (!inTab.length) return;
+    this.applyView(inTab, mode, true);
+    // A second click while the new pane is still on its way doesn't open another, in each tab on
+    // its own. On another machine it can take a while, so this holds until the pane comes
+    // (syncView lets go then), or for 10 s should it never come.
+    const windows = windowsOf(inTab), now = Date.now();
+    if (mode === "desktop" && windows.length === 1 && !(this.opening.has(tab) && now - this.opening.get(tab) < 10000)) {
+      this.opening.set(tab, now);
+      run("pane.focus", { pane: windows[0].pane });
+      run("terminal.open", windows[0].cwd ? { place: "right", folder: windows[0].cwd } : { place: "right" });
+    }
+    this.viewKey = viewKey(tab, mode, inTab); // the render this causes finds nothing to do
+  }
+
+  // view mode: puts the tab whose panes are `inTab` in `mode`. Without `force` (a tab, mode or
+  // agent change) only a zoom this mode made comes undone.
+  applyView(inTab, mode, force) {
+    const zoomed = inTab.find(p => p.zoomed), main = windowsOf(inTab)[0];
+    // The panes this mode zoomed; gone ones drop out once every machine's panes are in.
+    const ready = machines().every(m => m.layout === "ready"), alive = new Set(panes().map(p => p.pane));
+    const ours = (shared(VIEW_ZOOMED) ?? []).filter(p => !ready || alive.has(p));
+    if (mode === "mobile" && folds(inTab)) {
+      if (zoomed?.pane === main.pane) return;
+      if (zoomed && !force) return; // another pane zoomed by hand stays
+      if (zoomed) run("pane.zoom", { pane: zoomed.pane });
+      run("pane.zoom", { pane: main.pane });
+      run("pane.focus", { pane: main.pane });
+      setShared(VIEW_ZOOMED, [...ours.filter(p => p !== main.pane && p !== zoomed?.pane), main.pane]);
+      return;
+    }
+    // 2, or a tab 1 leaves whole (herdr-dev.sh's grid of test watchers and servers): a zoom this
+    // mode made comes undone, and a click on 2 undoes one done by hand too.
+    if (!zoomed || !(ours.includes(zoomed.pane) || (force && mode === "desktop"))) return;
+    run("pane.zoom", { pane: zoomed.pane });
+    setShared(VIEW_ZOOMED, ours.filter(p => p !== zoomed.pane));
   }
 
   // The side panel is remembered per space: switching shows that space's choice
   // (closed if it never had one), and opening or closing it records it.
-  // view mode: acts when the mode or the shown tab changes, never on a zoom the person did by hand.
-  syncView(space) {
-    const tab = space?.tabs?.find(c => c.active)?.id, mode = viewMode();
-    if (!tab || (mode === this.viewMode && tab === this.viewTab)) return;
-    const inTab = panes().filter(p => p.tab === tab), zoomed = inTab.find(p => p.zoomed);
-    if (!inTab.length) return; // panes not in yet (a fresh start): look again on the next render
-    this.viewMode = mode; this.viewTab = tab;
-    const alive = new Set(panes().map(p => p.pane));
-    const ours = (shared(VIEW_ZOOMED) ?? []).filter(p => alive.has(p));
-    // Undo a zoom this mode made in the shown tab; a zoom done by hand stays.
-    const unzoomOurs = () => {
-      if (!zoomed || !ours.includes(zoomed.pane)) return;
-      run("pane.zoom", { pane: zoomed.pane });
-      setShared(VIEW_ZOOMED, ours.filter(p => p !== zoomed.pane));
-    };
-    if (mode === "mobile") {
-      // Only a tab with an agent folds to it. A tab without one (herdr-dev.sh's grid of test
-      // watchers and servers, a plain shell split) keeps all its panes, and a zoom this mode
-      // left there before comes undone.
-      const agent = inTab.find(p => p.program?.agent || p.status);
-      if (!agent) return unzoomOurs();
-      if (inTab.length < 2 || zoomed) return;
-      run("pane.zoom", { pane: agent.pane });
-      run("pane.focus", { pane: agent.pane });
-      setShared(VIEW_ZOOMED, [...ours.filter(p => p !== agent.pane), agent.pane]);
-    } else unzoomOurs();
-  }
-
   syncPanel(space, panel, body, enabled) {
     if (!space || !panel) return;
     const now = panel.hidden ? null : body?.active ?? null;
@@ -175,17 +215,28 @@ export default class Tabs extends View {
       .on_mouse_down("left", stop)
       .when(Boolean(md), el => el.hover(s => s.bg(t.hover)).on_click((_e, cx) => showMarkdown(md, cx)))
       .child(svg("mods/markdown-browser/markdown.svg").size(14)).child("Markdown");
-    // view mode: a 3-column | 2-column switch right of + (Desktop | Mobile inside), the mode you are in
-    // lit; the other one switches.
+    // view mode: a [1] | [1|2] switch right of + (Mobile | Desktop inside): a little picture of the
+    // tab's windows, numbered as the folder bar numbers them: 1 the main window alone, 2 the
+    // secondary window beside it. The mode you are in is lit; a click on either puts the shown tab
+    // in that mode. The picture's lines take the digits' color, so hover is tracked here.
     const mobile = viewMode() === "mobile";
-    const viewChoice = (id, icon, label, on, mode) => div().id(id).size(24).flex_none().flex().items_center().justify_center().rounded(5)
-      .bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.dim)
-      .when(!on, el => el.hover(s => s.bg(t.hover).text_color(t.foreground)))
-      .tooltip(label).on_mouse_down("left", stop).on_click(() => { if (!on) setShared(VIEW, mode); })
-      .child(svg(`mods/tabs-dev/${icon}.svg`).size(15));
+    const viewChoice = (id, cells, label, on, mode) => {
+      const hot = on || this.viewHover === id, ink = hot ? t.foreground : t.dim;
+      return div().id(id).h(24).px(5).flex_none().flex().items_center().justify_center().rounded(5)
+        .bg(on ? t.selected : hot ? t.hover : t.chrome).text_color(ink)
+        .tooltip(label).accessibility_label(label)
+        .on_hover((hovered, cx) => {
+          const next = hovered ? id : this.viewHover === id ? null : this.viewHover;
+          if (next !== this.viewHover) { this.viewHover = next; cx.notify(); }
+        })
+        .on_mouse_down("left", stop).on_click(() => this.chooseView(space, mode))
+        .child(h_flex().h(15).flex_none().rounded(3).border_1().border_color(ink).children(cells.map((digit, i) =>
+          div().w(cells.length === 1 ? 13 : 11).h_full().flex().items_center().justify_center().text_size(10).font_semibold()
+            .when(i > 0, el => el.border_l(1).border_color(ink)).child(digit))));
+    };
     const viewButton = h_flex().id("view-mode").h(26).p(1).gap(1).flex_none().items_center().rounded(6).border_1().border_color(t.border)
-      .child(viewChoice("view-desktop", "columns-3", "3 columns: agent | shell | file panel", !mobile, "desktop"))
-      .child(viewChoice("view-mobile", "columns-2", "2 columns: agent | file panel", mobile, "mobile"));
+      .child(viewChoice("view-mobile", ["1"], "1: the main window alone", mobile, "mobile"))
+      .child(viewChoice("view-desktop", ["1", "2"], "2: the main and secondary windows (a tab with one window gets a second)", !mobile, "desktop"));
     return h_flex().size_full().min_w(0).px(10).pl(lightsPadding).gap(3).items_center().bg(t.chrome).border_b(1).border_color(t.border)
       .on_mouse_up("left", () => { this.pressed = null; })
       .on_scroll_wheel(e => { if (Math.abs(e.delta.y) >= 1) run(e.delta.y > 0 ? "tab.prev" : "tab.next"); })

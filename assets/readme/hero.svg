@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
   <title id="title">tkhwang-herdr-mods: my Herdr app window, kept as files</title>
-  <desc id="desc">Schematic of the Herdr app window that layouts/main-dev.json builds, in the Catppuccin Mocha theme. Each block carries a tag naming the mod in this repo that fills it: better-spaces and agents-dev in the sidebar, tabs-dev as the tab bar, and git-graph, better-changes and files-dev stacked in the side panel. The center pane is a terminal running ./sync.sh apply.</desc>
+  <desc id="desc">Schematic of the Herdr app window that layouts/tkhwang-herdr.json builds, in the Catppuccin Mocha theme. Each block carries a tag naming the mod in this repo that fills it: better-spaces and agents-dev in the sidebar, tabs-dev as the tab bar, and git-graph, better-changes and files-dev stacked in the side panel. The center pane is a terminal running ./sync.sh apply.</desc>
 
   <defs>
     <style>
@@ -20,8 +20,8 @@
   </g>
 
   <!-- The window is the layout file: its tag sits on the frame like a file tab -->
-  <path d="M862 196 V168 Q862 160 870 160 H1130 Q1138 160 1138 168 V196 Z" fill="#60b9fc"/>
-  <text class="m" x="874" y="185" font-size="20" font-weight="700" fill="#14151c">layouts/main-dev.json</text>
+  <path d="M801 196 V168 Q801 160 809 160 H1130 Q1138 160 1138 168 V196 Z" fill="#60b9fc"/>
+  <text class="m" x="813" y="185" font-size="20" font-weight="700" fill="#14151c">layouts/tkhwang-herdr.json</text>
 
   <!-- Window surfaces -->
   <g clip-path="url(#win)">
@@ -111,11 +111,15 @@
     <!-- + menu, then the 3 | 2 column switch, then the panel buttons -->
     <text class="m" x="790" y="225" font-size="20" fill="#a6adc8" text-anchor="middle">+</text>
 
-    <rect x="812" y="206" width="48" height="25" rx="6" fill="none" stroke="#cdd6f4" stroke-opacity="0.25"/>
-    <rect x="812" y="206" width="24" height="25" rx="6" fill="#60b9fc" fill-opacity="0.18"/>
-    <line x1="836" y1="206" x2="836" y2="231" stroke="#cdd6f4" stroke-opacity="0.25"/>
-    <g fill="#60b9fc"><rect x="817" y="212" width="3" height="13" rx="1"/><rect x="822.5" y="212" width="3" height="13" rx="1"/><rect x="828" y="212" width="3" height="13" rx="1"/></g>
-    <g fill="#a6adc8"><rect x="841" y="212" width="6" height="13" rx="1"/><rect x="849" y="212" width="6" height="13" rx="1"/></g>
+    <rect x="802" y="206" width="58" height="25" rx="6" fill="none" stroke="#cdd6f4" stroke-opacity="0.25"/>
+    <rect x="802" y="206" width="24" height="25" rx="6" fill="#60b9fc" fill-opacity="0.18"/>
+    <line x1="826" y1="206" x2="826" y2="231" stroke="#cdd6f4" stroke-opacity="0.25"/>
+    <rect x="807.5" y="211" width="13" height="15" rx="2.5" fill="none" stroke="#60b9fc" stroke-width="1.2"/>
+    <text class="m" x="814" y="222.5" font-size="10" font-weight="700" fill="#60b9fc" text-anchor="middle">1</text>
+    <rect x="832" y="211" width="22" height="15" rx="2.5" fill="none" stroke="#a6adc8" stroke-width="1.2"/>
+    <line x1="843" y1="211" x2="843" y2="226" stroke="#a6adc8" stroke-width="1.2"/>
+    <text class="m" x="837.5" y="222.5" font-size="10" font-weight="700" fill="#a6adc8" text-anchor="middle">1</text>
+    <text class="m" x="848.5" y="222.5" font-size="10" font-weight="700" fill="#a6adc8" text-anchor="middle">2</text>
 
     <text class="m" x="918" y="223" font-size="16" fill="#a6adc8" text-anchor="end">Files</text>
     <text class="m" x="998" y="223" font-size="16" fill="#a6adc8" text-anchor="end">Changes</text>
@@ -136,12 +140,13 @@
       <text x="342" y="388"><tspan fill="#a6e3a1">installed</tspan><tspan fill="#a6adc8"> mods/tabs-dev</tspan></text>
       <text x="342" y="414" fill="#7f849c">same: mods/git-graph</text>
       <text x="342" y="440" fill="#7f849c">same: themes/herdr-catppuccin.json</text>
-      <text x="342" y="466"><tspan fill="#a6e3a1">installed</tspan><tspan fill="#a6adc8"> layouts/main-dev.json</tspan></text>
+      <text x="342" y="466"><tspan fill="#a6e3a1">installed</tspan><tspan fill="#a6adc8"> layouts/tkhwang-herdr.json</tspan></text>
       <text x="342" y="500" fill="#cdd6f4">restart Herdr if a mod folder was new,</text>
-      <text x="342" y="526" fill="#cdd6f4">then switch to the main-dev layout (⌘⇧L)</text>
-      <text x="342" y="562" fill="#60b9fc">$</text>
+      <text x="342" y="526" fill="#cdd6f4">then switch to the tkhwang-herdr layout</text>
+      <text x="342" y="552" fill="#cdd6f4">(⌘⇧L)</text>
+      <text x="342" y="588" fill="#60b9fc">$</text>
     </g>
-    <rect x="360" y="547" width="10" height="20" fill="#60b9fc"/>
+    <rect x="360" y="573" width="10" height="20" fill="#60b9fc"/>
   </g>
 
   <!-- Side panel: one stack, three mods -->
@@ -185,5 +190,5 @@
   </g>
 
   <!-- Status bar -->
-  <text class="m" x="334" y="679" font-size="15" fill="#7f849c">main-dev · Catppuccin Mocha</text>
+  <text class="m" x="334" y="679" font-size="15" fill="#7f849c">tkhwang-herdr · Catppuccin Mocha</text>
 </svg>

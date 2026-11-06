@@ -22,7 +22,7 @@
     <rect x="64" y="48" width="252" height="32" rx="7" fill="#60b9fc"/>
     <text class="m" x="76" y="71" font-size="20" font-weight="700" fill="#14151c">tkhwang-herdr-mods/</text>
     <g class="m" font-size="18" fill="#cdd6f4">
-      <text x="68" y="122">layouts/main-dev.json</text>
+      <text x="68" y="121" font-size="16" textLength="262" lengthAdjust="spacingAndGlyphs">layouts/tkhwang-herdr.json</text>
       <text x="68" y="152">settings.json</text>
       <text x="68" y="182">keys.json</text>
       <text x="68" y="212">mods/ <tspan fill="#7f849c">10 mods</tspan></text>
@@ -35,7 +35,7 @@
     <rect x="466" y="48" width="264" height="32" rx="7" fill="#60b9fc"/>
     <text class="m" x="478" y="71" font-size="20" font-weight="700" fill="#14151c">~/.config/herdr-app/</text>
     <g class="m" font-size="18" fill="#cdd6f4">
-      <text x="470" y="122">layouts/main-dev.json</text>
+      <text x="470" y="121" font-size="16" textLength="262" lengthAdjust="spacingAndGlyphs">layouts/tkhwang-herdr.json</text>
       <text x="470" y="152">settings.json, keys.json</text>
       <text x="470" y="182">mods/ <tspan fill="#7f849c">+ copy-on-select</tspan></text>
       <text x="470" y="212">themes/ <tspan fill="#7f849c">Catppuccin</tspan></text>
