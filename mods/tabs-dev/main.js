@@ -69,6 +69,8 @@ export default class Tabs extends View {
   // view mode: looks at the shown tab again when the mode, the tab, or the agent in it changes
   // (one started in a shell there, or one that ended), never on a zoom the person did by hand.
   syncView(space) {
+    // The pane a click on 2 opened has come, or its tab has gone: the next click may open one.
+    if (this.opening && windowsOf(panes().filter(p => p.tab === this.opening.tab)).length !== 1) this.opening = null;
     const tab = space?.tabs?.find(c => c.active)?.id, inTab = tab ? panes().filter(p => p.tab === tab) : [];
     if (!inTab.length) return; // panes not in yet (a fresh start): look again on the next render
     const key = viewKey(tab, viewMode(), inTab);
@@ -86,9 +88,11 @@ export default class Tabs extends View {
     const tab = space?.tabs?.find(c => c.active)?.id, inTab = tab ? panes().filter(p => p.tab === tab) : [];
     if (!inTab.length) return;
     this.applyView(inTab, mode, true);
-    // A second click while the new pane is still on its way doesn't open another.
+    // A second click while the new pane is still on its way doesn't open another. On another
+    // machine it can take a while, so this holds until the pane comes (syncView lets go then),
+    // or for 10 s should it never come.
     const windows = windowsOf(inTab), now = Date.now();
-    if (mode === "desktop" && windows.length === 1 && !(this.opening?.tab === tab && now - this.opening.at < 1500)) {
+    if (mode === "desktop" && windows.length === 1 && !(this.opening?.tab === tab && now - this.opening.at < 10000)) {
       this.opening = { tab, at: now };
       run("pane.focus", { pane: windows[0].pane });
       run("terminal.open", windows[0].cwd ? { place: "right", folder: windows[0].cwd } : { place: "right" });

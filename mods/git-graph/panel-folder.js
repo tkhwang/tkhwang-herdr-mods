@@ -14,7 +14,9 @@ import { spaces, panes, machines, shared, setShared, pickFolder, home } from "he
 // A tab without an entry shows its main pane's folder.
 export const PICKS = "panel-folder.picks";
 
-const trim = (cwd) => cwd.replace(/(.)[\\/]+$/, "$1");
+// Drops a folder's trailing separators, but not a root's: "/" stays, and so does a drive root
+// such as "C:\" (bare "C:" is that drive's current folder, not its root).
+const trim = (cwd) => (/^[A-Za-z]:[\\/]+$/.test(cwd) ? cwd : cwd.replace(/(.)[\\/]+$/, "$1"));
 const nameOf = (cwd, on) => (!on && cwd === home() ? "~" : trim(cwd).split(/[\\/]/).pop() || cwd);
 const tilde = (cwd, on) => (!on && cwd.startsWith(home() + "/") ? "~" + cwd.slice(home().length) : cwd);
 const stop = (_e, cx) => cx.stop_propagation();
