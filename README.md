@@ -22,13 +22,14 @@ After a first `apply`, restart Herdr (it sees new mod folders at start) and pick
 | **Agents list**<br>`agents-dev` | agents grouped under their space, nested rows, workbranch tasks named as in the Spaces list, the repo an agent is in for a multi-repo task, the same glows and highlight |
 | **Tab bar**<br>`better-tabs` | tabs that wrap onto more lines and drag to reorder, then at the right `+`, the window switch, and **Files**, **Changes** and **Git** buttons that drag too or tuck into a ⋮ menu; each space's open panel remembered |
 | **Window switch**<br>`tkhwang-view-mode` | a [1] \| [1\|2] \| [1\|2/3] switch between `+` and Files: the shown tab's main window alone, with one window beside it, or with two stacked beside it |
-| **Side panel**<br>`files-dev`, `better-changes`, `git-graph` | Files, Changes and Git show one folder, the tab's first pane (its main window), or a pane or folder picked in the folder bar under each panel's header; the focus no longer moves them |
+| **Side panel, Files**<br>`file-icons` | the focused pane's folder as a tree with VS Code's Material Icon Theme icons, git letters and a read-only preview |
+| **Side panel**<br>`better-changes`, `git-graph` | Changes and Git show one folder, the tab's first pane (its main window), or a pane or folder picked in the folder bar under each panel's header; the focus no longer moves them |
 | **Side panel, Changes**<br>`better-changes` | staged/unstaged groups, diffs, a repo picker in workbranch wrappers, AI commit messages, a Push button |
 | **Side panel, Git**<br>`git-graph` | a commit graph, or a Manygit list in a folder of repos |
 | **Terminal**<br>copy-on-select | copies a selection on mouse release |
 | **Theme**<br>Catppuccin | Mocha in dark mode, Latte in light mode, a `#60b9fc` accent |
 
-`tabs-dev`, `spaces-dev` and `changes-dev` stay installed as fallbacks: put one back in the layout's tabs, spaces or changes block to switch. `tabs-dev` was the tab bar before `better-tabs`, and what only it opens isn't reachable from `better-tabs`: the **Open with Zed** `+` menu (`herdr-open-with-zed`) and the Markdown icon with its `markdown-browser` tab (fed by `files-dev`). Its window switch moved out into `tkhwang-view-mode`; with `tabs-dev` back, take the layout's `view-mode` block out, or both switches fold windows.
+`tabs-dev`, `spaces-dev`, `changes-dev` and `files-dev` stay installed as fallbacks: put one back in the layout's tabs, spaces, changes or files block to switch. `files-dev` was the Files panel before `file-icons`; back in the files block, Files shows the folder Changes and Git show again, with the folder bar. `tabs-dev` was the tab bar before `better-tabs`, and what only it opens isn't reachable from `better-tabs`: the **Open with Zed** `+` menu (`herdr-open-with-zed`) and the Markdown icon with its `markdown-browser` tab (fed by `files-dev`). Its window switch moved out into `tkhwang-view-mode`; with `tabs-dev` back, take the layout's `view-mode` block out, or both switches fold windows.
 
 ## How this repo is organized
 
@@ -83,7 +84,7 @@ For a Herdr clone the ref is a Herdr version tag: `./sync.sh update agents-dev v
 
 ## Before you apply
 
-- **What runs, and what reaches the network.** `better-spaces` runs `git`, `hc` and `gh` (GitHub with your local `gh` login). The sparkle **Message** button in `better-changes` runs `claude -p`, so the staged diff goes to Anthropic through your Claude Code login, and its Push button runs `git push` with your git credentials. `git-graph` reaches the network only on Fetch, Pull, Push or deleting a remote branch, and asks GitHub's releases API once a day for a newer release. `markdown-browser` uses no network.
+- **What runs, and what reaches the network.** `better-spaces` runs `git`, `hc` and `gh` (GitHub with your local `gh` login). The sparkle **Message** button in `better-changes` runs `claude -p`, so the staged diff goes to Anthropic through your Claude Code login, and its Push button runs `git push` with your git credentials. `git-graph` reaches the network only on Fetch, Pull, Push or deleting a remote branch, and asks GitHub's releases API once a day for a newer release. `markdown-browser` uses no network. `file-icons` runs `sh` to list folders and `git` to read status, on the space's machine, and uses no network.
 - **Workbranch wrappers.** In a folder of repos that is not a repo itself, `better-changes` and `changes-dev` show a repo picker, `git-graph` shows a Manygit list, and `better-spaces` and `agents-dev` name a workbranch task space (a `.workbranch.task` file beside its repos, or a folder of repos right under a project's `.workbranch.config` other than `_base`) after its repo with the branch under it when it holds one repo, and after its task folder when it holds several, since those repos are the same in every task; there `better-spaces` shows the project under the name and a repo's branch only when it isn't the task's (no PR status for a task folder). A plain folder of repos and a project's own folder keep their names.
 - **Theme picks.** A theme picked in Settings > Look is kept per layout in `layouts/.state/`; pick the Catppuccin themes there again if one was picked before.
 - **Command time limit.** Herdr stops a command after 30 s, so a slow fetch or push in `git-graph` can fail.
@@ -99,7 +100,7 @@ In `config/` and `own/`.
 <details>
 <summary><b><code>config/layouts/tkhwang-herdr.json</code></b> · the window</summary>
 
-Clone of the shipped `main` layout; its spaces block points to `better-spaces`, its agents block to `agents-dev`, its Files block to `files-dev`, its Changes slot to `better-changes`, its tab bar to `better-tabs` (its Files, Changes and Git buttons in the block's `props`), a 0px `view-mode` block at the bottom to `tkhwang-view-mode` (beside copy-on-select's), and its side panel (`panel-body`) has a third block, `graph`, for `git-graph`. Its theme is Catppuccin: `herdr-catppuccin` (Mocha) in dark mode, `herdr-catppuccin-latte` in light mode.
+Clone of the shipped `main` layout; its spaces block points to `better-spaces`, its agents block to `agents-dev`, its Files block to `file-icons`, its Changes slot to `better-changes`, its tab bar to `better-tabs` (its Files, Changes and Git buttons in the block's `props`), a 0px `view-mode` block at the bottom to `tkhwang-view-mode` (beside copy-on-select's), and its side panel (`panel-body`) has a third block, `graph`, for `git-graph`. Its theme is Catppuccin: `herdr-catppuccin` (Mocha) in dark mode, `herdr-catppuccin-latte` in light mode.
 
 </details>
 
@@ -114,6 +115,8 @@ App look and keys; `keys.json` also carries markdown-browser's `mod:markdown-bro
 <summary><b><code>own/shared/panel-folder.js</code></b> · one folder for Files, Changes and Git</summary>
 
 **Marker:** `panel folder`, in `files-dev`, `better-changes` and `git-graph`
+
+With `file-icons` in the Files block (it has no folder bar and follows the focused pane), only Changes and Git share the folder; `files-dev` joins them again when it is back.
 
 The shipped panels follow the focused pane, each on its own, so a click on a second or third pane, or the tab bar's view switch moving the focus, moved Files, Changes and Git to other folders. The three now show one folder for the shown tab, whatever has the focus: its main window's, the tab's first pane, which the tab bar's 1 shows.
 
@@ -179,9 +182,11 @@ Right of `+`, a [1] | [1|2] | [1|2/3] switch for a tab's main window, its first 
 </details>
 
 <details>
-<summary><b><code>files-dev</code></b> · side panel, Files · clone of Herdr's <code>files</code> 0.1.13</summary>
+<summary><b><code>files-dev</code></b> · fallback Files panel · clone of Herdr's <code>files</code> 0.1.13</summary>
 
 **Markers:** `markdown tab`, `panel folder`
+
+Replaced in the layout by `file-icons` and kept as the fallback: put `files-dev` back in the layout's `files` block to switch.
 
 Clone of the shipped Files panel (0.1.13). It publishes the file its preview shows as the shared `files-dev.shown`, so `tabs-dev`'s Markdown icon can render it (unused with `better-tabs`), and while that Markdown viewer tab is the shown one it keeps listing the folder the file came from instead of jumping to the space folder (marked `markdown tab`; `markdown.js` is the same file as in `tabs-dev`).
 
@@ -304,6 +309,15 @@ It reads the previewed file and watches its folder; opening in the default app r
 `kind: oss` without a patch, and the `fetch` mod and themes, which aren't kept here.
 
 <details>
+<summary><b><code>file-icons</code></b> · side panel, Files · <a href="https://github.com/LaiqianDS/herdr-mods/tree/main/file-icons">LaiqianDS/herdr-mods</a> at <code>eae0b91</code>, unchanged</summary>
+
+[LaiqianDS/herdr-mods](https://github.com/LaiqianDS/herdr-mods/tree/main/file-icons) at `eae0b91`, unchanged; from [cybertron288/herdr-mods](https://github.com/cybertron288/herdr-mods/tree/main/file-icons), with its icon lookup moved into `lookup.js`. In the layout's `files` block in place of `files-dev`: Herdr's Files panel with the icons of VS Code's [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme) 5.40.0 (1,184 SVGs in `icons/`, about 5 MB; light themes get the light variants). It lists the focused pane's folder as a tree opened one folder at a time, folders first and `.git` left out, at most 500 entries a folder and 5,000 in all; changed files carry a git letter (`A`, `M`, `D`, `U`); a click on a file shows its text read-only, with syntax colors, until **←**. It refreshes every 10 s, and on a change under the folder when it is on this computer.
+
+It runs `sh` to list a folder (`powershell` on Windows) and `git rev-parse` and `git status` (no optional locks), on the space's machine; it reads the files you click and uses no network. Its folder must keep the name `file-icons`: the icon paths are `mods/file-icons/icons/…` (`DIR` in `main.js` and `lookup.js`). MIT, © cybertron288 ([`licenses/file-icons/LICENSE`](licenses/file-icons/LICENSE)); the icons MIT, © Material Extensions (`upstream/file-icons/LICENSE-material-icon-theme.txt`); the panel is based on Herdr's own `files` mod, Apache-2.0 ([`licenses/herdr`](licenses/herdr)). It has no patch yet: change it in the app, then `./sync.sh backup`. When that repo moves on, `./sync.sh update file-icons <commit>`.
+
+</details>
+
+<details>
 <summary><b><code>herdr-open-with-zed</code></b> · <code>+</code> menu · <a href="https://github.com/atleugim/herdr-open-with-zed">atleugim/herdr-open-with-zed</a> at <code>a15570e</code>, unchanged</summary>
 
 [atleugim/herdr-open-with-zed](https://github.com/atleugim/herdr-open-with-zed) at `a15570e`, unchanged: Herdr's `+` menu (`new-menu` 0.1.11) with an **Open with Zed** row that opens the focused terminal's folder in Zed (`zed`, else `zeditor`, else `open -a Zed`). `tabs-dev`'s `+` opens it; `better-tabs`' `+` opens Herdr's own `new-menu`, so it isn't reachable while the layout uses `better-tabs`. Apache-2.0 ([`licenses/herdr-open-with-zed/LICENSE`](licenses/herdr-open-with-zed/LICENSE)); when that repo moves on, `./sync.sh update herdr-open-with-zed <commit>`. It has no patch here.
@@ -334,6 +348,7 @@ It reads the previewed file and watches its folder; opening in the default app r
 | `upstream/herdr-open-with-zed` | [atleugim/herdr-open-with-zed](https://github.com/atleugim/herdr-open-with-zed) | Apache-2.0, [`licenses/herdr-open-with-zed`](licenses/herdr-open-with-zed) |
 | `upstream/git-graph` | [rabeeh-ta/herdr-git-graph](https://github.com/rabeeh-ta/herdr-git-graph) | MIT, [`licenses/herdr-git-graph`](licenses/herdr-git-graph); icons Lucide, ISC |
 | `upstream/markdown-browser` | [ohneda/herdr-markdown-browser](https://github.com/ohneda/herdr-markdown-browser) | MIT, [`licenses/herdr-markdown-browser`](licenses/herdr-markdown-browser) |
+| `upstream/file-icons` | [LaiqianDS/herdr-mods](https://github.com/LaiqianDS/herdr-mods), from [cybertron288/herdr-mods](https://github.com/cybertron288/herdr-mods) | MIT, [`licenses/file-icons`](licenses/file-icons); icons Material Icon Theme, MIT (`upstream/file-icons/LICENSE-material-icon-theme.txt`); based on Herdr's `files` mod, Apache-2.0 |
 | copy-on-select | [jspoynor/herdr-copy-on-select](https://github.com/jspoynor/herdr-copy-on-select) | none, so not kept here: `apply` downloads it |
 | Catppuccin themes | [MarcozVD/herdr-layout-catppuccin](https://github.com/MarcozVD/herdr-layout-catppuccin) | none, so not kept here: `apply` downloads them |
 

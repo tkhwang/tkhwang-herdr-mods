@@ -120,6 +120,15 @@
       },
       "license": "herdr-open-with-zed"
     },
+    "file-icons": {
+      "kind": "oss",
+      "upstream": {
+        "repo": "LaiqianDS/herdr-mods",
+        "commit": "eae0b91ca69653fcd30e16de7fbee56d11447b86",
+        "path": "file-icons/mods/file-icons"
+      },
+      "license": "file-icons"
+    },
     "copy-on-select": {
       "kind": "fetch",
       "upstream": {
