@@ -20,7 +20,7 @@ After a first `apply`, restart Herdr (it sees new mod folders at start) and pick
 | --- | --- |
 | **Spaces list**<br>`better-spaces` | branch and PR status per space, nested worktrees, workbranch tasks named after their repo with its branch (one repo) or their task folder with the project and only what differs (several repos), dev server ports, agent status marks as media buttons (a blue play ▶ on a pale blue row while an agent works, an orange pause ❚❚ that breathes on a pale orange row when one needs you, a green stop ■ when one is done), the current space in a pale neutral tint with a bold name and a bar on the left in the text color |
 | **Agents list**<br>`agents-dev` | agents grouped under their space, nested rows, workbranch tasks named as in the Spaces list, the repo an agent is in for a multi-repo task, the same status colors and highlight |
-| **Tab bar**<br>`better-tabs` | tabs that wrap onto more lines and drag to reorder, then at the right `+`, the window switch, and **Files**, **Changes** and **Git** buttons that drag too or tuck into a ⋮ menu; each space's open panel remembered |
+| **Tab bar**<br>`better-tabs` | tabs all 200 px wide, so a few tabs are easy to click, that wrap onto more lines and drag to reorder, then at the right `+`, the window switch, and **Files**, **Changes** and **Git** buttons that drag too or tuck into a ⋮ menu; each space's open panel remembered |
 | **Window switch**<br>`tkhwang-view-mode` | a [1] \| [1\|2] \| [1\|2/3] switch between `+` and Files: the shown tab's main window alone, with one window beside it, or with two stacked beside it |
 | **Side panel, Files**<br>`file-icons` | the focused pane's folder as a tree with VS Code's Material Icon Theme icons, git letters and a read-only preview |
 | **Side panel**<br>`better-changes`, `git-graph` | Changes and Git show one folder, the tab's first pane (its main window), or a pane or folder picked in the folder bar under each panel's header; the focus no longer moves them |
@@ -100,7 +100,7 @@ In `config/` and `own/`.
 <details>
 <summary><b><code>config/layouts/tkhwang-herdr.json</code></b> · the window</summary>
 
-Clone of the shipped `main` layout; its spaces block points to `better-spaces`, its agents block to `agents-dev`, its Files block to `file-icons`, its Changes slot to `better-changes`, its tab bar to `better-tabs` (its Files, Changes and Git buttons in the block's `props`), a 0px `view-mode` block at the bottom to `tkhwang-view-mode` (beside copy-on-select's), and its side panel (`panel-body`) has a third block, `graph`, for `git-graph`. Its theme is Catppuccin: `herdr-catppuccin` (Mocha) in dark mode, `herdr-catppuccin-latte` in light mode.
+Clone of the shipped `main` layout; its spaces block points to `better-spaces`, its agents block to `agents-dev`, its Files block to `file-icons`, its Changes slot to `better-changes`, its tab bar to `better-tabs` (its Files, Changes and Git buttons and its 200 px `tab_width` in the block's `props`), a 0px `view-mode` block at the bottom to `tkhwang-view-mode` (beside copy-on-select's), and its side panel (`panel-body`) has a third block, `graph`, for `git-graph`. Its theme is Catppuccin: `herdr-catppuccin` (Mocha) in dark mode, `herdr-catppuccin-latte` in light mode.
 
 </details>
 
@@ -262,13 +262,15 @@ File and folder rows, and the diff tab's header, show the Material Icon Theme ic
 <details>
 <summary><b><code>better-tabs</code></b> · tab bar · <a href="https://github.com/munza/herdr-mods/tree/main/better-tabs">munza/herdr-mods</a> at <code>6e2ffe0</code> (3.0.0), patched</summary>
 
-**Markers:** `new tab place`, `view mode`
+**Markers:** `new tab place`, `view mode`, `tab width`
 
 [munza/herdr-mods](https://github.com/munza/herdr-mods/tree/main/better-tabs) at `6e2ffe0` (3.0.0 in its `mod.json`), in the layout's `tabs` block in place of `tabs-dev`. Tabs wrap onto more lines and the bar grows to hold them (`layout.resize` on `tabs`); a press held 400 ms and moved 12 px drags a tab, and a line in the gap shows where it lands. On the right, **Files**, **Changes** and **Git** open the side panel's `files`, `changes` and `graph` blocks; a button dragged onto ⋮ is hidden there, as are buttons that don't fit, and the arrangement is kept per layout in the shared `better-tabs.toolbar`. Each space's open panel is kept in the mod's own storage and opened again on returning to the space. A zoomed tab shows `Z` after its name.
 
 Patched so the bar reads tabs … `+` [1] | [1|2] | [1|2/3] Files Changes Git ⋮, as `tabs-dev`'s did:
 - `+` (Herdr's own `new-menu`) leads the buttons on the first row at the right instead of following the last tab; a tab dropped on it still goes last (marked `new tab place`).
 - The window switch comes next (marked `view mode`; `views/view-switch.js`). It only draws: a click sends the mode to `tkhwang-view-mode` (above), and the lit button is the shared `tkhwang-view-mode.view`.
+
+Every tab is one fixed width, 200 px, the `tabs` block's `props.tab_width` in `config/layouts/tkhwang-herdr.json`, so the two or three tabs a space usually has are big to click (marked `tab width`; `tabWidth` in `views/tab-bar.js`). The name takes what the icon, the status and the shown tab's close button leave, truncated, and those sit at the tab's right end. A tab that isn't shown, which upstream draws as bare text, is outlined in the text color at 15%, so its whole width reads as something to click. Tabs that don't fit on a line still wrap onto the next. Without `tab_width` a tab is as wide as its name, up to `settings.tabs.max_width` (170 px), as upstream.
 
 The buttons are the `tabs` block's `props.buttons` in `config/layouts/tkhwang-herdr.json`: the mod's two defaults, Files and Changes, plus Git with `mods/git-graph/icons/graph.svg`, the icon `tabs-dev` used. It runs no programs and reaches no network; the only file it reads is its own `mod.json`, for `settings`. Apache-2.0 ([`licenses/herdr-mods/LICENSE`](licenses/herdr-mods/LICENSE), [`licenses/herdr-mods/NOTICE-6e2ffe0`](licenses/herdr-mods/NOTICE-6e2ffe0)). When that repo moves on, `./sync.sh update better-tabs <commit>`.
 

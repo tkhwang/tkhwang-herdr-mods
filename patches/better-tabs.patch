@@ -19,10 +19,53 @@ index 521eab3..4f39672 100644
  
  export default Tabs;
 diff --git a/views/tab-bar.js b/views/tab-bar.js
-index 8eeaece..c64d3b3 100644
+index 8eeaece..e196868 100644
 --- a/views/tab-bar.js
 +++ b/views/tab-bar.js
-@@ -206,8 +206,7 @@ export const tabBarMethods = {
+@@ -44,9 +44,18 @@ export const tabBarMethods = {
+     return modIcon ? svg(modIcon).size(14).text_color(t.muted) : null;
+   },
+ 
++  // tab width: the tabs block's `tab_width` props makes every tab that wide (px), the name
++  // taking what the icon, status and close button leave, so a few tabs are big to click.
++  // Without it, a tab is as wide as its name, up to settings.tabs.max_width.
++  tabWidth() {
++    const width = Number(this.config().tab_width);
++    return Number.isFinite(width) && width > 0 ? width : null;
++  },
++
+   tabItem(tab, space, ps, t) {
+     const icon = this.tabIcon(tab, ps, t);
+     const drag = this.tabDrag;
++    const width = this.tabWidth(); // tab width
+     return h_flex()
+       .id(`tab-${tab.id}`)
+       .relative()
+@@ -56,9 +65,12 @@ export const tabBarMethods = {
+       .rounded(7)
+       .items_center()
+       .flex_none()
++      .when(Boolean(width), (el) => el.w(width)) // tab width
+       .text_size(TEXT.tab)
+       .border(1)
+-      .border_color(tab.active ? t.border : t.chrome)
++      // tab width: a fixed-width tab that isn't shown is outlined in the text color at 15%,
++      // so its whole width reads as something to click.
++      .border_color(tab.active ? t.border : width && /^#[0-9a-f]{6}$/i.test(t.foreground) ? `${t.foreground}26` : t.chrome)
+       .bg(tab.active ? t.raised : t.chrome)
+       .text_color(tab.active ? t.foreground : t.muted)
+       .hover((s) => s.bg(t.hover))
+@@ -79,7 +91,8 @@ export const tabBarMethods = {
+       .when(Boolean(icon), (el) => el.child(icon))
+       .child(
+         div()
+-          .max_w(this.settings.tabs.max_width)
++          .when(Boolean(width), (el) => el.flex_1().min_w(0)) // tab width
++          .when(!width, (el) => el.max_w(this.settings.tabs.max_width))
+           .truncate()
+           .tooltip(tab.name)
+           .child(tab.zoomed ? `${tab.name} Z` : tab.name),
+@@ -206,8 +219,7 @@ export const tabBarMethods = {
        .items_center()
        .gap(TAB_GAP)
        .on_size_change((size) => this.fitHeight(size))
@@ -32,7 +75,7 @@ index 8eeaece..c64d3b3 100644
    },
  
    // Dropping a tab on the + puts it last.
-@@ -245,6 +244,9 @@ export const tabBarMethods = {
+@@ -245,6 +257,9 @@ export const tabBarMethods = {
        .on_hover((hovered, cx) => {
          if (!hovered && this.actionDrag()?.target) this.moveActionDrag({}, cx, null);
        });

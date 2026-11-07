@@ -136,7 +136,8 @@
                         "target": "graph"
                       }
                     }
-                  ]
+                  ],
+                  "tab_width": 200
                 }
               },
               "size": {
