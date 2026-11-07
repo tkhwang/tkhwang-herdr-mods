@@ -91,7 +91,53 @@
               "id": "tabs",
               "type": "block",
               "content": {
-                "mod": "tabs-dev"
+                "mod": "better-tabs",
+                "props": {
+                  "buttons": [
+                    {
+                      "id": "files",
+                      "label": "Files",
+                      "icon": "file",
+                      "when": {
+                        "node": "files"
+                      },
+                      "action": {
+                        "type": "panel",
+                        "container": "panel",
+                        "stack": "panel-body",
+                        "target": "files"
+                      }
+                    },
+                    {
+                      "id": "changes",
+                      "label": "Changes",
+                      "icon": "changes",
+                      "when": {
+                        "node": "changes"
+                      },
+                      "action": {
+                        "type": "panel",
+                        "container": "panel",
+                        "stack": "panel-body",
+                        "target": "changes"
+                      }
+                    },
+                    {
+                      "id": "graph",
+                      "label": "Git",
+                      "icon": "mods/git-graph/icons/graph.svg",
+                      "when": {
+                        "node": "graph"
+                      },
+                      "action": {
+                        "type": "panel",
+                        "container": "panel",
+                        "stack": "panel-body",
+                        "target": "graph"
+                      }
+                    }
+                  ]
+                }
               },
               "size": {
                 "px": 42
@@ -143,7 +189,7 @@
                           "id": "files",
                           "type": "block",
                           "content": {
-                            "mod": "files-dev"
+                            "mod": "file-icons"
                           }
                         },
                         {
@@ -219,6 +265,16 @@
       "type": "block",
       "content": {
         "mod": "copy-on-select"
+      },
+      "size": {
+        "px": 0
+      }
+    },
+    {
+      "id": "view-mode",
+      "type": "block",
+      "content": {
+        "mod": "tkhwang-view-mode"
       },
       "size": {
         "px": 0

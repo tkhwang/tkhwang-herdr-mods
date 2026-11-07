@@ -1,13 +1,14 @@
 diff --git a/main.js b/main.js
-index f8aa00f..8ee6db3 100644
+index f8aa00f..b0b0abe 100644
 --- a/main.js
 +++ b/main.js
-@@ -1,15 +1,30 @@
+@@ -1,15 +1,31 @@
 +// Changed from munza/herdr-mods@77d94f7: a line of dev server ports under a space
 +// (ports.js, from the spaces-dev mod), code marked "dev ports"; updateColors waits for
-+// shared colors after a start (marked "space colors"); agent status glows and the
-+// navigation commands from filipores/herdr-spaces-status@4881e68 (navigation.js,
-+// marked "status glow"); the active space is tinted cyan, with a cyan bar on the
++// shared colors after a start (marked "space colors"); an agent status mark at the right
++// end of each row (needs you, done, working) and the navigation commands from
++// filipores/herdr-spaces-status@4881e68 (navigation.js, marked "status mark"); the
++// active space is tinted cyan, with a cyan bar on the
 +// left and its name in bold (marked "current highlight"); a workbranch task space (a
 +// task folder of repos, or a repo right in one) is named after its repo with the branch
 +// under it when it has one repo, and after its task folder with a line for the project and
@@ -22,24 +23,23 @@ index f8aa00f..8ee6db3 100644
 -import { em } from "./typography.js";
 +import { em, rowPx } from "./typography.js"; // rowPx: sidebar size
 +import { readPorts, portsDir, portPieces, PORT_LINE } from "./ports.js"; // dev ports
-+import { navigationTarget } from "./navigation.js"; // status glow
++import { navigationTarget } from "./navigation.js"; // status mark
  import { View, div, svg } from "gpui-kit";
  import { v_flex, h_flex } from "gpui-base";
  import {
    spaces,
    machines,
    panes,
-+  agents, // status glow
-+  nextCommand, // status glow
++  agents, // status mark
++  nextCommand, // status mark
    run,
    openOverlay,
    exec,
-@@ -20,6 +35,8 @@ import {
+@@ -20,6 +36,7 @@ import {
    watchFolder,
    window,
    layout,
 +  home, // wrapper repos
-+  focused, // status glow
  } from "herdr";
  
  function find(node, id) {
@@ -102,14 +102,12 @@ index f8aa00f..8ee6db3 100644
  // What a stored color name looks like on an avatar (the same in every mod
  // that draws space avatars): one strong color per hue, light and dark alike.
  const AVATAR_COLORS = {
-@@ -63,8 +123,75 @@ export function glyph(status) {
+@@ -63,9 +123,67 @@ export function glyph(status) {
    return status === "blocked" || status === "done" ? "●" : "·";
  }
  
-+// status glow: done is green, blocked orange; working is a separate neutral contour, yellow
-+// (the agent color of the tab bar, tabs-dev) only where the working agent is open on the
-+// right. Blocked is a deeper orange than the original amber, which read as that yellow.
-+const WORKING = "#facc15";
++// status mark: done is green, blocked (needs you) orange. Blocked is a deeper orange than the
++// original amber, so it reads apart from the theme's yellows. Kept in step with agents-dev.
 +const GLOW = { done: "#22c55e", blocked: "#f97316" };
 +
  export function tone(t, status) {
@@ -117,44 +115,26 @@ index f8aa00f..8ee6db3 100644
 +  return GLOW[status] ?? (status === "working" ? t.muted : t[status]) ?? t.unknown;
 +}
 +
-+// status glow: layered translucent outlines (the renderer has no colored shadow).
-+function glow(status) {
-+  const color = GLOW[status];
-+  if (!color) return [];
-+  return [
-+    div().absolute().inset(0).rounded(8).bg(`${color}18`),
-+    ...["70", "38", "20", "10"].map((alpha, i) =>
++// status mark: one mark at the right end of a space's first line, for the most urgent of its
++// agents as Herdr ranks them, as media buttons that read as one set (play.svg, pause.svg and
++// stop.svg, shared with agents-dev): needs you, an orange pause that breathes (stopped for you);
++// done, a green stop; working, a still play in the theme's working blue (the row's background is
++// that blue too). Idle: nothing; the slot stays, so the branches line up. No outline or
++// fill on the row: only the current space has a background.
++function statusMark(id, status, working, t) {
++  const slot = h_flex().id(`mark-${id}`).w(14).h(14).flex_none().items_center().justify_center();
++  const button = (name, color) => svg(`mods/better-spaces/${name}.svg`).size(12).text_color(color);
++  if (status === "blocked")
++    return slot.tooltip("Needs you").child(
 +      div()
-+        .absolute()
-+        .inset(-i)
-+        .rounded(8 + i)
-+        .border(1)
-+        .border_color(`${color}${alpha}`),
-+    ),
-+  ];
-+}
-+
-+// status glow: while an agent in the space works, a faint contour breathes. On the current
-+// space with that agent in its open tab, so its terminal is on the right, the contour is
-+// yellow and stronger, over the cyan: one yellow row at most, the one you're watching.
-+function workPulse(id, t, open) {
-+  const [from, to, period] = open ? [0.45, 1, 1800] : [0.1, 0.24, 3200];
-+  return div()
-+    .id(`work-pulse-${id}${open ? "-open" : ""}`)
-+    .absolute()
-+    .inset(0)
-+    .loop("opacity", { from, to, period, easing: "ease-in-out" })
-+    .children(
-+      [1, 0.38, 0.16, 0.06].map((opacity, i) =>
-+        div()
-+          .absolute()
-+          .inset(-i)
-+          .rounded(8 + i)
-+          .border(1)
-+          .border_color(open ? WORKING : t.foreground)
-+          .opacity(opacity),
-+      ),
++        .id(`mark-need-${id}`)
++        .flex_none()
++        .loop("opacity", { from: 0.6, to: 1, period: 1400, easing: "ease-in-out" })
++        .child(button("pause", GLOW.blocked)),
 +    );
++  if (status === "done") return slot.tooltip("Done").child(button("stop", GLOW.done));
++  if (working) return slot.tooltip("Working").child(button("play", t.working));
++  return slot;
 +}
 +
 +// space initials: a space's avatar shows the first letters of its name's first and last words
@@ -170,16 +150,28 @@ index f8aa00f..8ee6db3 100644
 +  return ([...words[0]][0] + (words.length > 1 ? [...words.at(-1)][0] : "")).toUpperCase();
 +}
 +
-+// current highlight: a plain selected background looked like the status outlines, and most
-+// space colors are green or teal like the done glow, so the active row is cyan (clear of
-+// the blocked orange, which yellow sat too close to): a tint and a bar on the left.
-+const CURRENT = "#22d3ee";
-+function currentBar() {
-+  return div().absolute().left(0).top(6).bottom(6).w(3).rounded(2).bg(CURRENT);
++// current highlight, status mark: a row's background says where you are and what its agent does: needs you, a pale orange (the most urgent state gets the strongest mark);
++// working, a pale working blue (the theme's working blue means working alone); the current row,
++// a pale tint of the text color (so it shows in light themes too; stronger than a hover's), its
++// name bold; the current row that needs you or works, a deeper orange or blue. Done and idle
++// rows have no background: done's green stop at the right end says it.
++const tint = (color, aa) => (/^#[0-9a-f]{6}$/i.test(color ?? "") ? color + aa : color);
++function rowTint(current, state, t) {
++  const color = state === "blocked" ? GLOW.blocked : state === "working" ? t.working : null;
++  if (color) return tint(color, current ? "40" : "24");
++  return tint(t.foreground, "2e");
  }
++// status mark: a space row's state for its background; needs you wins over working, being more
++// urgent (a space can have one agent of each).
++const rowState = (status, working) => (status === "blocked" ? "blocked" : working ? "working" : null);
++// current highlight: the current row also has a bar on its left edge in the text color, so where
++// you are reads at a glance whatever its background (neutral, or blue while its agent works);
++// blue stays working's.
++const currentBar = (t) => div().absolute().left(0).top(6).bottom(6).w(3).rounded(2).bg(t.foreground);
  
  export default class Spaces extends View {
-@@ -83,6 +210,10 @@ export default class Spaces extends View {
+   // ── Lifecycle and refresh scheduling ──────────────────────────────────────
+@@ -83,6 +201,10 @@ export default class Spaces extends View {
      this.ready = {}; // machine -> its layout was readable at the last look
      this.at = {}; // Space ID -> checkout key at the previous refresh.
      this.watching = new Set(); // local repos' git folders
@@ -190,11 +182,11 @@ index f8aa00f..8ee6db3 100644
      // Spaces made while this runs wait (at most a moment) for their git, so a
      // worktree appears under its repo instead of jumping there.
      this.shown = new Set(spaces().map((s) => s.id));
-@@ -101,6 +232,134 @@ export default class Spaces extends View {
+@@ -101,6 +223,134 @@ export default class Spaces extends View {
      // `git status` walks the whole tree, on another machine a process there:
      // only when its answer could have changed (see `due`).
      cx.timer.every(250, (cx) => this.checkNew(cx));
-+    // status glow: better-spaces.first_done / better-spaces.next_working.
++    // status mark: better-spaces.first_done / better-spaces.next_working.
 +    cx.spawn(async () => {
 +      for (;;) {
 +        const target = navigationTarget(await nextCommand(), spaces(), agents());
@@ -325,7 +317,7 @@ index f8aa00f..8ee6db3 100644
    }
  
    checkNew(cx) {
-@@ -123,6 +382,7 @@ export default class Spaces extends View {
+@@ -123,6 +373,7 @@ export default class Spaces extends View {
      this.prObserver.refresh(places, cx);
      const due = this.due(now, sp, ps);
      if (due.size) this.refreshGit(due, cx);
@@ -333,7 +325,7 @@ index f8aa00f..8ee6db3 100644
      if (sp.some((s) => !this.shown.has(s.id))) cx.notify();
    }
  
-@@ -188,7 +448,9 @@ export default class Spaces extends View {
+@@ -188,7 +439,9 @@ export default class Spaces extends View {
  
      if (window().active) {
        for (const key of usedKeys) {
@@ -344,7 +336,7 @@ index f8aa00f..8ee6db3 100644
          if (
            needsPolling &&
            !this.folded.has(JSON.parse(key)[0]) &&
-@@ -268,8 +530,10 @@ export default class Spaces extends View {
+@@ -268,8 +521,10 @@ export default class Spaces extends View {
        );
        if (r.code !== 0) {
          // Only git's own "no" is remembered as no repo; anything else is asked again.
@@ -356,7 +348,7 @@ index f8aa00f..8ee6db3 100644
          return;
        }
        // The repo's own .git folder names it; a worktree's top differs from it.
-@@ -304,6 +568,9 @@ export default class Spaces extends View {
+@@ -304,6 +559,9 @@ export default class Spaces extends View {
          }
        }
        this.git[key] = info;
@@ -366,7 +358,7 @@ index f8aa00f..8ee6db3 100644
        if (!on) this.watch(repo, cx);
      } catch {
        // Couldn't ask (the machine is away): keep what it showed, look again later.
-@@ -312,6 +579,106 @@ export default class Spaces extends View {
+@@ -312,6 +570,106 @@ export default class Spaces extends View {
      }
    }
  
@@ -473,7 +465,7 @@ index f8aa00f..8ee6db3 100644
    watch(repo, cx) {
      if (this.watching.has(repo)) return;
      this.watching.add(repo);
-@@ -355,7 +722,11 @@ export default class Spaces extends View {
+@@ -355,7 +713,11 @@ export default class Spaces extends View {
        Date.now() - (this.born[w.id] ??= Date.now()) > 1500;
      for (const w of sp) if (!this.shown.has(w.id) && ready(w)) this.shown.add(w.id);
      const list = sp
@@ -486,25 +478,22 @@ index f8aa00f..8ee6db3 100644
        .filter((r) => this.shown.has(r.w.id));
      const mains = new Set(list.filter((r) => r.g && !r.g.linked).map((r) => r.g.repo));
      const nested = (r) => r.g?.linked && mains.has(r.g.repo);
-@@ -375,7 +746,16 @@ export default class Spaces extends View {
+@@ -375,7 +737,13 @@ export default class Spaces extends View {
    // The rows, under a header per machine once one isn't this computer.
    grouped(t, collapsed) {
      const rows = this.ordered();
 -    const draw = (r) => (collapsed ? this.compact(r, t) : this.row(r, t));
-+    // status glow: spaces with a working agent, from agents() (not the aggregate status), and
-+    // whether one of them is in the tab open on the right.
-+    const here = focused();
-+    const busy = agents().filter((a) => a.status === "working");
-+    const working = new Set(busy.map((a) => a.space));
-+    const open = busy.some((a) => a.space === here?.space && a.tab === here?.tab) ? here.space : null;
++    // status mark: spaces with a working agent, from agents(): the aggregate status shows done
++    // or blocked over working, and the spinner still says a space is busy when it has neither.
++    const working = new Set(agents().filter((a) => a.status === "working").map((a) => a.space));
 +    const draw = (r) => {
-+      const row = { ...r, working: working.has(r.w.id) && (r.w.id === open ? "open" : true) };
++      const row = { ...r, working: working.has(r.w.id) };
 +      return collapsed ? this.compact(row, t) : this.row(row, t);
 +    };
      const remote = [
        ...new Set([
          ...rows.map((r) => r.w.machine).filter(Boolean),
-@@ -393,7 +773,7 @@ export default class Spaces extends View {
+@@ -393,7 +761,7 @@ export default class Spaces extends View {
      const loadingRow = (m) =>
        div()
          .id(`machine-loading-${m ?? "local"}`)
@@ -513,7 +502,7 @@ index f8aa00f..8ee6db3 100644
          .flex_none()
          .px(8)
          .text_size(em(0.95))
-@@ -408,7 +788,7 @@ export default class Spaces extends View {
+@@ -408,7 +776,7 @@ export default class Spaces extends View {
        const folded = this.folded.has(m);
        const head = h_flex()
          .id(`machine-${m ?? "local"}`)
@@ -522,7 +511,7 @@ index f8aa00f..8ee6db3 100644
          .flex_none()
          .px(collapsed ? 2 : 8)
          .gap(7)
-@@ -472,7 +852,7 @@ export default class Spaces extends View {
+@@ -472,7 +840,7 @@ export default class Spaces extends View {
          );
        const empty = h_flex()
          .id(`machine-new-${m ?? "local"}`)
@@ -531,7 +520,7 @@ index f8aa00f..8ee6db3 100644
          .flex_none()
          .px(8)
          .gap(7)
-@@ -610,7 +990,7 @@ export default class Spaces extends View {
+@@ -610,7 +978,7 @@ export default class Spaces extends View {
      const status = this.checkoutStatus(w);
      return h_flex()
        .id(`space-pr-line-${w.id}`)
@@ -540,7 +529,7 @@ index f8aa00f..8ee6db3 100644
        .pl(tree ? 44 : 27)
        .gap(6)
        .items_center()
-@@ -629,22 +1009,27 @@ export default class Spaces extends View {
+@@ -629,22 +997,28 @@ export default class Spaces extends View {
    }
    // ── Expanded/compact rows and sidebar rendering ──────────────────────────
  
@@ -568,20 +557,12 @@ index f8aa00f..8ee6db3 100644
        .justify_center()
        .rounded(8)
 -      .when(on, (el) => el.bg(t.selected))
-+      .when(on, (el) => el.bg(`${CURRENT}33`).child(currentBar())) // current highlight
++      .when(on || Boolean(rowState(w.status, working)), (el) => el.bg(rowTint(on, rowState(w.status, working), t))) // current highlight, status mark
++      .when(on, (el) => el.child(currentBar(t))) // current highlight
        .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
        .when(this.pressed === i && this.over !== i, (el) => el.opacity(0.5))
        .when(this.pressed !== null && this.over === i && this.pressed !== i, (el) =>
-@@ -682,6 +1067,8 @@ export default class Spaces extends View {
-         cx.notify();
-       })
-       .on_mouse_down("right", () => this.menu(w))
-+      .when(Boolean(working), (el) => el.child(workPulse(w.id, t, working === "open"))) // status glow
-+      .children(glow(w.status)) // status glow
-       .child(
-         h_flex()
-           .gap(9)
-@@ -698,37 +1085,45 @@ export default class Spaces extends View {
+@@ -698,35 +1072,43 @@ export default class Spaces extends View {
                  .bg(fill)
                  .items_center()
                  .justify_center()
@@ -608,7 +589,8 @@ index f8aa00f..8ee6db3 100644
 +              .child(label), // wrapper repos
            )
 -          .child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1()),
-+          .when(!wr, (el) => el.child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1())), // wrapper repos
++          .when(!wr, (el) => el.child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1())) // wrapper repos
++          .child(statusMark(w.id, w.status, working, t)), // status mark
        )
 +      .when(Boolean(wr), (el) => el.child(this.taskLine(w, wr, tree, t))) // wrapper repos
 +      .children(ports.map((p) => this.portLine(p, ports.length > 1, tree, t))) // dev ports
@@ -622,22 +604,33 @@ index f8aa00f..8ee6db3 100644
      return h_flex()
        .id(`space-${w.id}`)
 -      .h(26)
-+      .relative() // status glow
-+      .rounded(8) // status glow
++      .relative() // status mark
++      .rounded(8) // status mark
 +      .h(rowPx(26)) // sidebar size
        .flex_none()
        .justify_center()
        .gap(4)
 -      .when(w.active, (el) => el.bg(t.raised))
-+      .when(w.active, (el) => el.bg(`${CURRENT}33`).child(currentBar())) // current highlight
++      .when(w.active || Boolean(rowState(w.status, working)), (el) => el.bg(rowTint(w.active, rowState(w.status, working), t))) // current highlight, status mark
++      .when(w.active, (el) => el.child(currentBar(t))) // current highlight
        .hover((s) => s.bg(t.hover))
        .on_click(() => run("space.select", { id: w.id }))
-+      .when(Boolean(working), (el) => el.child(workPulse(w.id, t, working === "open"))) // status glow
-+      .children(glow(w.status)) // status glow
        .child(
-         div()
+@@ -734,13 +1116,23 @@ export default class Spaces extends View {
            .text_color(w.active ? t.foreground : t.muted)
-@@ -741,6 +1136,11 @@ export default class Spaces extends View {
+           .child(String(i + 1)),
+       )
+-      .when(Boolean(badge), (el) => el.child(badge))
+-      .when(!badge, (el) => el.child(div().text_color(tone(t, w.status)).child(glyph(w.status))));
++      // status mark: a status wins over the PR badge in the rail, which has room for one mark.
++      .when(Boolean(badge) && !(w.status === "blocked" || w.status === "done" || working), (el) =>
++        el.child(badge),
++      )
++      .when(!badge || w.status === "blocked" || w.status === "done" || Boolean(working), (el) =>
++        el.child(statusMark(`rail-${w.id}`, w.status, working, t)),
++      );
+   }
+ 
    // Share avatar colors with Herdr's own space menus. Do this during data
    // synchronization, never render: setShared itself schedules a redraw.
    updateColors(sp) {
@@ -649,7 +642,7 @@ index f8aa00f..8ee6db3 100644
      const palette = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
      const ids = new Set(sp.map((p) => p.id));
      const kept = Object.fromEntries(
-@@ -772,7 +1172,7 @@ export default class Spaces extends View {
+@@ -772,7 +1164,7 @@ export default class Spaces extends View {
        })
        .child(
          h_flex()
@@ -658,6 +651,16 @@ index f8aa00f..8ee6db3 100644
            .pl(16)
            .pr(10)
            .items_center()
+@@ -800,6 +1192,9 @@ export default class Spaces extends View {
+           .min_h(0)
+           .px(8)
+           .pb(14)
++          // current highlight, status mark: rows with a background (current, working) sit apart
++          // instead of running into one block.
++          .gap(3)
+           .overflow_y_scrollbar()
+           .mode("always")
+           .on_mouse_up("left", (_e, cx) => {
 diff --git a/typography.js b/typography.js
 index 4066bed..122e570 100644
 --- a/typography.js

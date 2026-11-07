@@ -1,5 +1,5 @@
 diff --git a/main.js b/main.js
-index 4ec2d54..94e5b25 100644
+index 4ec2d54..097cf73 100644
 --- a/main.js
 +++ b/main.js
 @@ -14,6 +14,25 @@ function find(node, id) {
@@ -38,41 +38,15 @@ index 4ec2d54..94e5b25 100644
  const SECTION = { 4: "Needs you", 3: "Done", 2: "Working", 1: "Idle" };
  const SECTION_STATUS = { 4: "blocked", 3: "done", 2: "working" };
  
-@@ -68,6 +88,62 @@ function icon(p, size, color) {
+@@ -68,6 +88,47 @@ function icon(p, size, color) {
    return p.tint ? svg(p.icon).size(size).flex_none().text_color(color) : image(p.icon).w(size).h(size).flex_none();
  }
  
-+// status glow: the same row treatment as the Spaces list (better-spaces, from
-+// filipores/herdr-spaces-status): done green, blocked orange, each with a faint fill
-+// and layered outlines; working a thin foreground contour that breathes, yellow (the tab
-+// bar's agent color) and stronger when the agent is in the tab open on the right. Idle:
-+// nothing. Blocked is a deeper orange than the original amber, which read as that yellow.
-+const WORKING = "#facc15";
++// status mark: the same marks as the Spaces list (better-spaces): each row's status at its
++// right end, as Herdr draws it (a spinner, "Needs you", a dot, an idle ring), with done green
++// and needs you orange, a deeper orange than the original amber. No outline or fill on the
++// row: only the current agent has a background.
 +const GLOW = { done: "#22c55e", blocked: "#f97316" };
-+
-+function glow(status) {
-+  const color = GLOW[status];
-+  if (!color) return [];
-+  return [
-+    div().absolute().inset(0).rounded(8).bg(`${color}18`),
-+    ...["70", "38", "20", "10"].map((alpha, i) =>
-+      div().absolute().inset(-i).rounded(8 + i).border(1).border_color(`${color}${alpha}`)),
-+  ];
-+}
-+
-+function workPulse(id, t, open) {
-+  const [from, to, period] = open ? [0.45, 1, 1800] : [0.1, 0.24, 3200];
-+  return div().id(`ag-pulse-${id}${open ? "-open" : ""}`).absolute().inset(0)
-+    .loop("opacity", { from, to, period, easing: "ease-in-out" })
-+    .children([1, 0.38, 0.16, 0.06].map((opacity, i) =>
-+      div().absolute().inset(-i).rounded(8 + i).border(1).border_color(open ? WORKING : t.foreground).opacity(opacity)));
-+}
-+
-+// open: the agent is in the tab shown on the right (here is focused()).
-+const statusGlow = (a, t, here) => [
-+  ...(a.status === "working" ? [workPulse(a.address, t, a.space === here?.space && a.tab === here?.tab)] : []),
-+  ...glow(a.status),
-+];
 +
 +// space initials: a space's avatar shows the first letters of its name's first and last words
 +// (tkhwang-herdr-mods TM, feature-cpq-task-a FA), one letter for a one-word name: a single
@@ -87,10 +61,21 @@ index 4ec2d54..94e5b25 100644
 +  return ([...words[0]][0] + (words.length > 1 ? [...words.at(-1)][0] : "")).toUpperCase();
 +}
 +
-+// current highlight: as in the Spaces list, the focused agent's row is cyan, a tint and
-+// a bar on the left, so it reads apart from the status outlines and the green space colors.
-+const CURRENT = "#22d3ee";
-+const currentBar = () => div().absolute().left(0).top(6).bottom(6).w(3).rounded(2).bg(CURRENT);
++// current highlight, status mark: as in the Spaces list, a row's background says where you are and what its agent does: needs you, a pale orange (the most urgent state gets the strongest mark);
++// working, a pale working blue (the theme's working blue means working alone); the current row,
++// a pale tint of the text color (so it shows in light themes too; stronger than a hover's), its
++// name bold; the current row that needs you or works, a deeper orange or blue. Done and idle
++// rows have no background: done's green stop at the right end says it.
++const tint = (color, aa) => (/^#[0-9a-f]{6}$/i.test(color ?? "") ? color + aa : color);
++function rowTint(current, state, t) {
++  const color = state === "blocked" ? GLOW.blocked : state === "working" ? t.working : null;
++  if (color) return tint(color, current ? "40" : "24");
++  return tint(t.foreground, "2e");
++}
++// current highlight: the current row also has a bar on its left edge in the text color, so where
++// you are reads at a glance whatever its background (neutral, or blue while its agent works);
++// blue stays working's.
++const currentBar = (t) => div().absolute().left(0).top(6).bottom(6).w(3).rounded(2).bg(t.foreground);
 +
 +// nested rows: under a space header an agent's row steps in by the header's avatar and
 +// gap (16 + 6), as the Spaces list nests a worktree under its repo (pl 22), so the space
@@ -101,7 +86,7 @@ index 4ec2d54..94e5b25 100644
  export default class Agents extends View {
    init(_props, cx) {
      if (props()?.sortMenu) return;
-@@ -170,25 +246,25 @@ export default class Agents extends View {
+@@ -170,25 +231,25 @@ export default class Agents extends View {
      });
    }
  
@@ -132,28 +117,47 @@ index 4ec2d54..94e5b25 100644
          .when(Boolean(l), el => el.border_l(1.5).border_color(t.input))
          .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(6))))
        .when(Boolean(pic), el => el.child(div().mr(8).child(pic)))
-@@ -200,8 +276,8 @@ export default class Agents extends View {
+@@ -196,15 +257,23 @@ export default class Agents extends View {
+       .child(this.status(t, { status: st }, compact));
+   }
+ 
+-  // compact: a ! for blocked where a header already says "Needs you".
++  // compact: Herdr drew a ! for blocked where a header already says "Needs you"; the pause
++  // (status mark) is the same in both.
    status(t, a, compact = false) {
-     const color = t[a.status] ?? t.dim;
-     if (a.status === "working") return svg("mods/workspace-chrome/spinner.svg").size(12).mx(1).flex_none().text_color(t.working).spin(900);
+-    const color = t[a.status] ?? t.dim;
+-    if (a.status === "working") return svg("mods/workspace-chrome/spinner.svg").size(12).mx(1).flex_none().text_color(t.working).spin(900);
 -    if (a.status === "blocked" && compact) return div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
 -    if (a.status === "blocked") return div().flex_none().px(6).h(18).rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you");
-+    if (a.status === "blocked" && compact) return div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(fs(10.5)).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
-+    if (a.status === "blocked") return div().flex_none().px(6).h(18).rounded(5).bg(t.blocked + "26").text_size(fs(10.5)).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you");
++    if (a.status === "working") return svg("mods/agents-dev/play.svg").size(12).mx(1).flex_none().text_color(t.working); // status mark: a still blue play; the row's background is that blue too
++    // status mark: the Spaces list's media buttons (play.svg, pause.svg, stop.svg, shared with
++    // better-spaces): needs you is an orange pause, in every view; on a row, which has an address
++    // for an id, it breathes as in the Spaces list.
++    if (a.status === "blocked") {
++      const pause = svg("mods/agents-dev/pause.svg").size(12).mx(1).flex_none().text_color(GLOW.blocked);
++      if (!a.address) return pause;
++      return div().id(`ag-need-${a.address}`).flex_none().tooltip("Needs you")
++        .loop("opacity", { from: 0.6, to: 1, period: 1400, easing: "ease-in-out" }).child(pause);
++    }
      // Idle: a ring; done: a dot.
      if (a.status === "idle") return div().size(7).mx(3).flex_none().rounded(4).border(1.5).border_color(t.idle ?? t.dim);
-     return div().size(7).mx(3).flex_none().rounded(4).bg(a.status === "done" ? color : t.dim + "00");
-@@ -215,7 +291,8 @@ export default class Agents extends View {
+-    return div().size(7).mx(3).flex_none().rounded(4).bg(a.status === "done" ? color : t.dim + "00");
++    if (a.status === "done") return svg("mods/agents-dev/stop.svg").size(12).mx(1).flex_none().text_color(GLOW.done); // status mark: a green stop, as in the Spaces list
++    return div().size(7).mx(3).flex_none().rounded(4).bg(t.dim + "00");
+   }
+ 
+   render(cx) {
+@@ -215,7 +284,8 @@ export default class Agents extends View {
      let list = agents();
      this.listed = new Map(list.map((a) => [a.address, a.status]));
      const all = terminals();
 -    const shown = focused()?.agent;
-+    const here = focused(); // status glow
++    const here = focused(); // status mark
 +    const shown = here?.agent;
      const now = Date.now();
      this.track(list, now);
      this.hold(list);
-@@ -233,7 +310,8 @@ export default class Agents extends View {
+@@ -233,7 +303,8 @@ export default class Agents extends View {
        const subs = collapsed ? [] : this.tree(all, a.address);
        const r = row(a, i, subs);
        if (this.folded.has(a.address)) return [r];
@@ -163,7 +167,7 @@ index 4ec2d54..94e5b25 100644
      };
  
      // The fold chevron; folded, the count too, colored by the most urgent one.
-@@ -249,7 +327,7 @@ export default class Agents extends View {
+@@ -249,7 +320,7 @@ export default class Agents extends View {
          .flex()
          .items_center()
          .rounded(4)
@@ -172,7 +176,7 @@ index 4ec2d54..94e5b25 100644
          .text_color(open ? t.dim : (t[top] ?? t.dim))
          .cursor_pointer()
          .hover((s) => s.bg(t.hover).text_color(t.foreground))
-@@ -277,6 +355,31 @@ export default class Agents extends View {
+@@ -277,6 +348,31 @@ export default class Agents extends View {
        if (detail.get(a.address) == null && seen[`${a.space_name}\u0000`] > 1) detail.set(a.address, label(a));
      }
  
@@ -204,26 +208,24 @@ index 4ec2d54..94e5b25 100644
      const row = (a, i, subs = []) => {
        const pic = icon(a.program, 16, t.foreground);
        const more = detail.get(a.address);
-@@ -285,13 +388,17 @@ export default class Agents extends View {
+@@ -285,11 +381,15 @@ export default class Agents extends View {
        if (collapsed) {
          return h_flex()
            .id(`ag-${a.address}`)
 -          .h(26)
-+          .relative() // status glow
-+          .rounded(8) // status glow
++          .relative() // status mark
++          .rounded(8) // status mark
 +          .h(rowPx(26)) // sidebar size
            .px(8)
            .flex_none()
            .items_center()
            .gap(4)
-+          .when(a.focused, (el) => el.bg(`${CURRENT}33`).child(currentBar())) // current highlight
++          .when(a.focused || a.status === "working" || a.status === "blocked", (el) => el.bg(rowTint(a.focused, a.status, t))) // current highlight, status mark
++          .when(a.focused, (el) => el.child(currentBar(t))) // current highlight
            .hover((s) => s.bg(t.hover))
            .on_click(() => run("pane.focus", { pane: a.pane }))
-+          .children(statusGlow(a, t, here)) // status glow
            .child(div().flex_1().min_w(0).whitespace_nowrap().text_right().text_color(t.muted).child(String(i + 1)))
-           .child(h_flex().w(14).flex_none().items_center().justify_center().child(this.status(t, a, true)));
-       }
-@@ -318,16 +425,19 @@ export default class Agents extends View {
+@@ -318,16 +418,20 @@ export default class Agents extends View {
        // Under a space header the space goes without saying; an automatic tab number says nothing.
        // Without a space header above (priority, pinned) the row names its space.
        const full = byPriority || isPinned;
@@ -234,7 +236,7 @@ index 4ec2d54..94e5b25 100644
          .id(`ag-${a.address}`)
 -        .px(8)
 -        .h(30)
-+        .relative() // status glow
++        .relative() // status mark
 +        .pl(full ? 8 : 8 + NEST) // nested rows
 +        .pr(8)
 +        .h(rowPx(30)) // sidebar size
@@ -243,19 +245,12 @@ index 4ec2d54..94e5b25 100644
          .items_center()
          .gap(9)
 -        .when(a.focused, (el) => el.bg(t.selected))
-+        .when(a.focused, (el) => el.bg(`${CURRENT}33`).child(currentBar())) // current highlight
++        .when(a.focused || a.status === "working" || a.status === "blocked", (el) => el.bg(rowTint(a.focused, a.status, t))) // current highlight, status mark
++        .when(a.focused, (el) => el.child(currentBar(t))) // current highlight
          .cursor_pointer()
          .hover((s) => s.bg(t.hover))
          .on_hover((on, cx) => {
-@@ -336,6 +446,7 @@ export default class Agents extends View {
-           cx.notify();
-         })
-         .on_click(() => run("pane.focus", { pane: a.pane }))
-+        .children(statusGlow(a, t, here)) // status glow
-         .when(Boolean(pic), el => el.child(div().id(`agent-fold-${a.address}`)
-           .when(subs.length > 0, el => el.on_click((_e, cx) => {
-             cx.stop_propagation();
-@@ -343,12 +454,14 @@ export default class Agents extends View {
+@@ -343,12 +447,14 @@ export default class Agents extends View {
              cx.notify();
            })).child(pic)))
          .child(h_flex().flex_1().min_w(0).gap(5).items_center()
@@ -273,7 +268,7 @@ index 4ec2d54..94e5b25 100644
          .child(this.status(t, a, byPriority && !isPinned));
      };
  
-@@ -369,12 +482,12 @@ export default class Agents extends View {
+@@ -369,12 +475,12 @@ export default class Agents extends View {
        return h_flex()
          .id(g.id)
          .px(8)
@@ -289,7 +284,7 @@ index 4ec2d54..94e5b25 100644
          .font_medium()
          .cursor_pointer()
          .hover((s) => s.text_color(t.foreground))
-@@ -389,9 +502,59 @@ export default class Agents extends View {
+@@ -389,9 +495,59 @@ export default class Agents extends View {
            .when(!byPriority && top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
            .child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim)));
      };
@@ -350,7 +345,7 @@ index 4ec2d54..94e5b25 100644
  
      return v_flex()
        .size_full()
-@@ -399,44 +562,44 @@ export default class Agents extends View {
+@@ -399,44 +555,44 @@ export default class Agents extends View {
        .bg(t.chrome)
        .border_t(1)
        .border_color(t.border)

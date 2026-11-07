@@ -1,3 +1,7 @@
 build/
 work/
 .DS_Store
+# Written into every mod folder by the Herdr app (and by herdr-app check)
+gpui-kit.d.ts
+herdr.d.ts
+jsconfig.json
