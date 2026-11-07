@@ -1,0 +1,694 @@
+diff --git a/main.js b/main.js
+index f8aa00f..8ee6db3 100644
+--- a/main.js
++++ b/main.js
+@@ -1,15 +1,30 @@
++// Changed from munza/herdr-mods@77d94f7: a line of dev server ports under a space
++// (ports.js, from the spaces-dev mod), code marked "dev ports"; updateColors waits for
++// shared colors after a start (marked "space colors"); agent status glows and the
++// navigation commands from filipores/herdr-spaces-status@4881e68 (navigation.js,
++// marked "status glow"); the active space is tinted cyan, with a cyan bar on the
++// left and its name in bold (marked "current highlight"); a workbranch task space (a
++// task folder of repos, or a repo right in one) is named after its repo with the branch
++// under it when it has one repo, and after its task folder with a line for the project and
++// what differs from usual (a repo off the task's branch, ahead or behind) when it has
++// several, and publishes them for the Agents list (marked "wrapper repos"); the layout block's
++// font_size and row_scale size its text and rows (marked "sidebar size", with typography.js).
+ // Better Spaces: a native spaces sidebar with right-aligned branches, nested
+ // worktrees, and a PR status line. Repository facts follow each space's first
+ // terminal. Agent attention and GitHub PR state remain separate concepts.
+ 
+ import { PRStatusObserver, prPlaceKey, prAppearance } from "./pr-status.js";
+-import { em } from "./typography.js";
++import { em, rowPx } from "./typography.js"; // rowPx: sidebar size
++import { readPorts, portsDir, portPieces, PORT_LINE } from "./ports.js"; // dev ports
++import { navigationTarget } from "./navigation.js"; // status glow
+ import { View, div, svg } from "gpui-kit";
+ import { v_flex, h_flex } from "gpui-base";
+ import {
+   spaces,
+   machines,
+   panes,
++  agents, // status glow
++  nextCommand, // status glow
+   run,
+   openOverlay,
+   exec,
+@@ -20,6 +35,8 @@ import {
+   watchFolder,
+   window,
+   layout,
++  home, // wrapper repos
++  focused, // status glow
+ } from "herdr";
+ 
+ function find(node, id) {
+@@ -38,7 +55,7 @@ function spaceFolder(space, paneList) {
+   return paneList.find((pane) => tabIDs.has(pane.tab) && pane.cwd)?.cwd || space.folder;
+ }
+ 
+-const rowHeight = ({ tree }) => (tree ? 28 : 30);
++const rowHeight = ({ tree }) => rowPx(tree ? 28 : 30); // sidebar size
+ const checkoutKey = (space, paneList) =>
+   JSON.stringify([space.machine ?? null, spaceFolder(space, paneList)]);
+ const basename = (path) => path.replace(/\/+$/, "").split("/").pop();
+@@ -47,6 +64,49 @@ const basename = (path) => path.replace(/\/+$/, "").split("/").pop();
+ // occasionally to catch edits and commits made outside Herdr.
+ const GIT_FALLBACK_MS = 15000;
+ 
++// wrapper repos: a workbranch task folder holds the task's repos (backend/ and frontend/ side
++// by side) and is not a repo: `<project>/<task>/<repo>`. With one repo the repo names the row
++// and its branch the task; with several, which are the same in every task of a project, the
++// folder names the row. A task folder has `.workbranch.task`; an older one
++// without it is a folder of repos right under the project's `.workbranch.config`, other than
++// its main worktrees folder (`_base`). TASK_INFO prints `L` for that older kind, `P <project
++// name>`, `B <repo> <branch>` per task-file branch and `R <repo>` per repo (better-changes'
++// repo picker loop; hidden folders included), or exits NOT_A_TASK. A plain folder of repos
++// (~/git) and a project's own folder keep their names.
++const NOT_A_TASK = 3;
++const TASK_INFO = [
++  "if [ ! -f .workbranch.task ]; then",
++  `  [ -f ../.workbranch.config ] || exit ${NOT_A_TASK}`,
++  "  base=$(sed -n 's/^MAIN_WORKTREES_DIR[[:space:]][[:space:]]*//p' ../.workbranch.config | head -n 1)",
++  "  here=$(pwd)",
++  `  [ "\${here##*/}" = "\${base:-_base}" ] && exit ${NOT_A_TASK}`,
++  "  echo L",
++  "fi",
++  "sed -n 's/^PROJECT_NAME[[:space:]][[:space:]]*/P /p' ../.workbranch.config 2>/dev/null | head -n 1",
++  "sed -n 's/^REPO_BRANCH[[:space:]][[:space:]]*/B /p' .workbranch.task 2>/dev/null",
++  `for d in */ .[!.]*/; do [ -e "$d.git" ] && printf 'R %s\\n' "\${d%/}"; done`,
++  "exit 0",
++].join("\n");
++const WRAPPER_MAX_REPOS = 6;
++// wrapper repos: shared { [space id]: { folder, name, task, root, project, repos: [{ name,
++// branch, expected, ahead, behind, unread? }] } }, for other mods (agents-dev's space headers
++// and repo tags); `name` is the space's name unless the person named it. `unread`: the last
++// look couldn't read that repo, so it shows what it showed before, or no branch (null).
++const WRAPPERS = "better-spaces.wrappers";
++
++// wrapper repos: a task repo's branch as shown ("?" for a repo not read yet).
++const branchName = (r) => (r.branch === "(detached)" ? "detached" : (r.branch ?? "?"));
++
++// wrapper repos: the branch a task's repo shows because it is not the expected one, or null.
++// Expected: the task file's REPO_BRANCH, else the task folder's own name, which workbranch
++// makes from the branch with `/` as `-` (feature/cpq-task-a in feature-cpq-task-a).
++function offBranch(r, task) {
++  if (!r.branch) return null; // not read yet: nothing to compare
++  if (r.branch === "(detached)") return "detached";
++  if (r.expected) return r.branch === r.expected ? null : r.branch;
++  return r.branch.replaceAll("/", "-") === task ? null : r.branch;
++}
++
+ // What a stored color name looks like on an avatar (the same in every mod
+ // that draws space avatars): one strong color per hue, light and dark alike.
+ const AVATAR_COLORS = {
+@@ -63,8 +123,75 @@ export function glyph(status) {
+   return status === "blocked" || status === "done" ? "●" : "·";
+ }
+ 
++// status glow: done is green, blocked orange; working is a separate neutral contour, yellow
++// (the agent color of the tab bar, tabs-dev) only where the working agent is open on the
++// right. Blocked is a deeper orange than the original amber, which read as that yellow.
++const WORKING = "#facc15";
++const GLOW = { done: "#22c55e", blocked: "#f97316" };
++
+ export function tone(t, status) {
+-  return t[status] ?? t.unknown;
++  return GLOW[status] ?? (status === "working" ? t.muted : t[status]) ?? t.unknown;
++}
++
++// status glow: layered translucent outlines (the renderer has no colored shadow).
++function glow(status) {
++  const color = GLOW[status];
++  if (!color) return [];
++  return [
++    div().absolute().inset(0).rounded(8).bg(`${color}18`),
++    ...["70", "38", "20", "10"].map((alpha, i) =>
++      div()
++        .absolute()
++        .inset(-i)
++        .rounded(8 + i)
++        .border(1)
++        .border_color(`${color}${alpha}`),
++    ),
++  ];
++}
++
++// status glow: while an agent in the space works, a faint contour breathes. On the current
++// space with that agent in its open tab, so its terminal is on the right, the contour is
++// yellow and stronger, over the cyan: one yellow row at most, the one you're watching.
++function workPulse(id, t, open) {
++  const [from, to, period] = open ? [0.45, 1, 1800] : [0.1, 0.24, 3200];
++  return div()
++    .id(`work-pulse-${id}${open ? "-open" : ""}`)
++    .absolute()
++    .inset(0)
++    .loop("opacity", { from, to, period, easing: "ease-in-out" })
++    .children(
++      [1, 0.38, 0.16, 0.06].map((opacity, i) =>
++        div()
++          .absolute()
++          .inset(-i)
++          .rounded(8 + i)
++          .border(1)
++          .border_color(open ? WORKING : t.foreground)
++          .opacity(opacity),
++      ),
++    );
++}
++
++// space initials: a space's avatar shows the first letters of its name's first and last words
++// (tkhwang-herdr-mods TM, feature-cpq-task-a FA), one letter for a one-word name: a single
++// letter came out the same for most spaces of one project or owner. Kept in step with
++// agents-dev's copy.
++function initials(name) {
++  const words = (name ?? "")
++    .replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2")
++    .split(/[^\p{L}\p{N}]+/u)
++    .filter(Boolean);
++  if (!words.length) return "?";
++  return ([...words[0]][0] + (words.length > 1 ? [...words.at(-1)][0] : "")).toUpperCase();
++}
++
++// current highlight: a plain selected background looked like the status outlines, and most
++// space colors are green or teal like the done glow, so the active row is cyan (clear of
++// the blocked orange, which yellow sat too close to): a tint and a bar on the left.
++const CURRENT = "#22d3ee";
++function currentBar() {
++  return div().absolute().left(0).top(6).bottom(6).w(3).rounded(2).bg(CURRENT);
+ }
+ 
+ export default class Spaces extends View {
+@@ -83,6 +210,10 @@ export default class Spaces extends View {
+     this.ready = {}; // machine -> its layout was readable at the last look
+     this.at = {}; // Space ID -> checkout key at the previous refresh.
+     this.watching = new Set(); // local repos' git folders
++    this.wrappers = Object.create(null); // wrapper repos: checkout key -> { task, root, project, repos }
++    this.emptyTasks = new Set(); // wrapper repos: task folders with a repo not read yet, retried like unsure
++    this.notTasks = new Set(); // wrapper repos: [machine, folder] above a repo, found not a task
++    this.wrappersKey = ""; // wrapper repos: what was last published as shared WRAPPERS
+     // Spaces made while this runs wait (at most a moment) for their git, so a
+     // worktree appears under its repo instead of jumping there.
+     this.shown = new Set(spaces().map((s) => s.id));
+@@ -101,6 +232,134 @@ export default class Spaces extends View {
+     // `git status` walks the whole tree, on another machine a process there:
+     // only when its answer could have changed (see `due`).
+     cx.timer.every(250, (cx) => this.checkNew(cx));
++    // status glow: better-spaces.first_done / better-spaces.next_working.
++    cx.spawn(async () => {
++      for (;;) {
++        const target = navigationTarget(await nextCommand(), spaces(), agents());
++        if (target) run(target.name, target.args);
++      }
++    });
++    // dev ports: read now, whenever its folder changes, and every 5 s (entries
++    // expire; the folder may appear later).
++    this.ports = {};
++    this.portsKey = "{}";
++    this.loadPorts(cx);
++    this.watchPorts(cx);
++    cx.timer.every(5000, (cx) => {
++      this.loadPorts(cx);
++      this.watchPorts(cx);
++    });
++  }
++
++  // dev ports: redraw only when what is shown changes (a herdr-dev.sh watcher
++  // rewrites its file every 5 s with a new `until`).
++  loadPorts(cx) {
++    cx.spawn(async (cx) => {
++      const next = await readPorts();
++      const key = JSON.stringify(next, (k, v) => (k === "until" ? undefined : v));
++      if (key === this.portsKey) return;
++      this.portsKey = key;
++      this.ports = next;
++      cx.notify();
++    });
++  }
++
++  watchPorts(cx) {
++    if (this.portsWatching) return;
++    this.portsWatching = true;
++    cx.spawn(async (cx) => {
++      try {
++        for (;;) {
++          await watchFolder(portsDir());
++          this.loadPorts(cx);
++        }
++      } catch {
++        this.portsWatching = false;
++      }
++    });
++  }
++
++  // dev ports: one line under the name, indented to it; the task's name first
++  // when several share the space.
++  portLine(r, named, tree, t) {
++    return h_flex()
++      .h(this.portLineHeight())
++      .flex_none()
++      .pl(tree ? 44 : 27)
++      .gap(4)
++      .items_center()
++      .text_size(em(0.85))
++      .overflow_hidden()
++      .when(named, (el) => el.child(div().flex_none().text_color(t.dim).child(r.task)))
++      .children(
++        portPieces(r, t).flatMap((p, n) => [
++          ...(n ? [div().flex_none().text_color(t.dim).child("·")] : []),
++          div().flex_none().text_color(p.color).child(p.text),
++        ]),
++      );
++  }
++
++  portLineHeight() {
++    return rowPx(Math.max(PORT_LINE, Math.ceil(em(1.25)))); // sidebar size
++  }
++
++  // wrapper repos: the line under a task's name, indented to it. A task of one repo: its branch
++  // (yellow when it isn't the task's), ahead and behind, after the repo's name when the person
++  // named the space. A task of several: the project, then only the repos with something to say:
++  // a branch that is not the task's (yellow, after the repo's name), ahead, behind. Every repo's
++  // branch is in the tooltip.
++  taskLine(w, wr, tree, t) {
++    const tip = wr.repos
++      .map((r) => {
++        const ab = `${r.ahead > 0 ? ` \u2191${r.ahead}` : ""}${r.behind > 0 ? ` \u2193${r.behind}` : ""}`;
++        const want = r.expected && r.branch !== r.expected ? ` (task: ${r.expected})` : "";
++        return `${r.name}: ${r.branch ? branchName(r) : "couldn't read"}${ab}${want}`;
++      })
++      .join("\n");
++    const counts = (r) => [
++      ...(r.ahead > 0 ? [div().flex_none().text_color(t.ansi2).child(`\u2191${r.ahead}`)] : []),
++      ...(r.behind > 0 ? [div().flex_none().text_color(t.ansi1).child(`\u2193${r.behind}`)] : []),
++    ];
++    const line = h_flex()
++      .id(`space-task-${w.id}`)
++      .h(this.portLineHeight())
++      .flex_none()
++      .pl(tree ? 44 : 27)
++      .gap(5)
++      .items_center()
++      .text_size(em(0.85))
++      .text_color(t.dim)
++      .overflow_hidden()
++      .tooltip(tip);
++    if (wr.repos.length === 1) {
++      const r = wr.repos[0];
++      return line
++        .when(Boolean(w.named), (el) => el.child(div().flex_none().text_color(t.muted).child(`${r.name}:`)))
++        .child(
++          div()
++            .min_w(0)
++            .truncate()
++            .when(Boolean(offBranch(r, wr.task)), (el) => el.text_color(t.ansi3))
++            .child(branchName(r)),
++        )
++        .children(counts(r));
++    }
++    const notes = wr.repos
++      .map((r) => ({ r, off: offBranch(r, wr.task) }))
++      .filter(({ r, off }) => off || r.ahead > 0 || r.behind > 0);
++    return line.child(div().min_w(0).truncate().child(wr.project)).children(
++      notes.flatMap(({ r, off }) => [
++        div().flex_none().child("\u00b7"),
++        div().flex_none().text_color(t.muted).child(off ? `${r.name}:` : r.name),
++        ...(off ? [div().min_w(0).truncate().text_color(t.ansi3).child(off)] : []),
++        ...counts(r),
++      ]),
++    );
++  }
++
++  // wrapper repos: the task name's tooltip: the name the person gave, project / task, folder.
++  taskTip(w, wr) {
++    return `${w.named ? `${w.name}\n` : ""}${wr.project} / ${wr.task}\n${wr.root}`;
+   }
+ 
+   checkNew(cx) {
+@@ -123,6 +382,7 @@ export default class Spaces extends View {
+     this.prObserver.refresh(places, cx);
+     const due = this.due(now, sp, ps);
+     if (due.size) this.refreshGit(due, cx);
++    this.publishWrappers(sp, ps); // wrapper repos
+     if (sp.some((s) => !this.shown.has(s.id))) cx.notify();
+   }
+ 
+@@ -188,7 +448,9 @@ export default class Spaces extends View {
+ 
+     if (window().active) {
+       for (const key of usedKeys) {
+-        const needsPolling = this.git[key] || this.unsure.has(key);
++        // wrapper repos: a task folder polls too, before and after its repos are read.
++        const needsPolling =
++          this.git[key] || this.unsure.has(key) || this.wrappers[key] || this.emptyTasks.has(key);
+         if (
+           needsPolling &&
+           !this.folded.has(JSON.parse(key)[0]) &&
+@@ -268,8 +530,10 @@ export default class Spaces extends View {
+       );
+       if (r.code !== 0) {
+         // Only git's own "no" is remembered as no repo; anything else is asked again.
+-        if (!/not a git repository/i.test(r.stderr)) this.unsure.add(key);
++        const noRepo = /not a git repository/i.test(r.stderr);
++        if (!noRepo) this.unsure.add(key);
+         this.git[key] = null;
++        if (noRepo) await this.checkWrapper(key, cwd, on); // wrapper repos
+         return;
+       }
+       // The repo's own .git folder names it; a worktree's top differs from it.
+@@ -304,6 +568,9 @@ export default class Spaces extends View {
+         }
+       }
+       this.git[key] = info;
++      // wrapper repos: a repo right in a task folder (a space opened in task/backend) still
++      // reads as its task.
++      await this.checkWrapper(key, top.stdout.trim().replace(/\/[^/]*$/, ""), on, true);
+       if (!on) this.watch(repo, cx);
+     } catch {
+       // Couldn't ask (the machine is away): keep what it showed, look again later.
+@@ -312,6 +579,106 @@ export default class Spaces extends View {
+     }
+   }
+ 
++  // wrapper repos: whether `dir` is a workbranch task folder, and if so the space at `key`
++  // reads as that task. `inRepo`: `dir` is the folder above the space's repo, asked on every
++  // look at the repo, so a folder found not to be a task is remembered and not asked again.
++  // A task with no repos yet, or with a repo git couldn't read (a worktree still being made,
++  // a broken link), is asked again by the poll until it can be, like `unsure`.
++  async checkWrapper(key, dir, on, inRepo = false) {
++    const place = JSON.stringify([on, dir]);
++    let next = null;
++    let retry = false;
++    if (dir && dir !== "/" && dir !== home() && !this.notTasks.has(place)) {
++      try {
++        const found = await this.readTask(dir, on, this.wrappers[key]);
++        if (found === NOT_A_TASK) {
++          if (inRepo) this.notTasks.add(place);
++        } else if (found) {
++          next = found;
++          retry = found.repos.some((r) => r.unread);
++        } else retry = true;
++      } catch {
++        // Couldn't ask (no sh, the machine is away): keep what it showed, look again later.
++        next = this.wrappers[key] ?? null;
++        retry = true;
++      }
++    }
++    if (next) this.wrappers[key] = next;
++    else delete this.wrappers[key];
++    if (retry) this.emptyTasks.add(key);
++    else this.emptyTasks.delete(key);
++  }
++
++  // wrapper repos: a task folder's name, project and repos, each with its branch, the branch
++  // its task file expects, and ahead/behind, read the way `check` reads a repo. NOT_A_TASK, or
++  // null for a task with no repos yet. The task's shape comes from the repos found, not the
++  // ones git could read: a repo it couldn't read stays, `unread`, with what `old` (the
++  // previous look) showed for it, so a task of two never reads as a task of one.
++  async readTask(dir, on, old) {
++    const ls = await exec("sh", ["-c", TASK_INFO], { cwd: dir, on });
++    if (ls.code === NOT_A_TASK) return NOT_A_TASK;
++    if (ls.code !== 0) return null;
++    const lines = ls.stdout.split("\n");
++    const names = lines
++      .filter((l) => l.startsWith("R "))
++      .map((l) => l.slice(2))
++      .slice(0, WRAPPER_MAX_REPOS);
++    // A folder under a project without a task file is a task only while it holds repos.
++    if (lines.includes("L") && !names.length) return NOT_A_TASK;
++    const expected = {};
++    for (const l of lines) {
++      if (!l.startsWith("B ")) continue;
++      const [name, branch] = l.slice(2).trim().split(/\s+/);
++      if (name && branch) expected[name] = branch;
++    }
++    const root = dir.replace(/\/+$/, "");
++    const project =
++      lines.find((l) => l.startsWith("P "))?.slice(2).trim() ||
++      basename(root.replace(/\/[^/]*$/, "") || "/");
++    const before = old?.root === root ? old.repos : [];
++    const repos = [];
++    for (const name of names) {
++      const r = await exec(
++        "git",
++        ["--no-optional-locks", "-c", "core.fsmonitor=false", "status", "--porcelain=v2", "--branch"],
++        { cwd: `${root}/${name}`, on },
++      );
++      const repo = { name, branch: null, expected: expected[name] ?? null, ahead: 0, behind: 0 };
++      if (r.code !== 0) {
++        repos.push({ ...repo, ...before.find((b) => b.name === name), expected: repo.expected, unread: true });
++        continue;
++      }
++      for (const line of r.stdout.split("\n")) {
++        if (line.startsWith("# branch.head ")) repo.branch = line.slice(14);
++        else if (line.startsWith("# branch.ab ")) {
++          const [a, b] = line.slice(12).split(" ");
++          repo.ahead = Math.abs(parseInt(a, 10)) || 0;
++          repo.behind = Math.abs(parseInt(b, 10)) || 0;
++        }
++      }
++      repos.push(repo);
++    }
++    // The space's name: a task of one repo goes by the repo (its branch says which task), a
++    // task of several by its folder (its repos are the same in every task of the project).
++    const task = basename(root);
++    const name = names.length === 1 ? names[0] : task;
++    return names.length ? { name, task, root, project, repos } : null;
++  }
++
++  // wrapper repos: the current spaces' wrappers, for other mods (agents-dev's space headers),
++  // published only when they change (setShared redraws every mod).
++  publishWrappers(sp, ps) {
++    const out = {};
++    for (const s of sp) {
++      const w = this.wrappers[checkoutKey(s, ps)];
++      if (w) out[s.id] = { folder: spaceFolder(s, ps), ...w };
++    }
++    const key = JSON.stringify(out);
++    if (key === this.wrappersKey) return;
++    this.wrappersKey = key;
++    setShared(WRAPPERS, out);
++  }
++
+   watch(repo, cx) {
+     if (this.watching.has(repo)) return;
+     this.watching.add(repo);
+@@ -355,7 +722,11 @@ export default class Spaces extends View {
+       Date.now() - (this.born[w.id] ??= Date.now()) > 1500;
+     for (const w of sp) if (!this.shown.has(w.id) && ready(w)) this.shown.add(w.id);
+     const list = sp
+-      .map((w, i) => ({ w, i, g: this.git[checkoutKey(w, ps)] ?? null }))
++      .map((w, i) => {
++        const key = checkoutKey(w, ps);
++        // wrapper repos: `wr`, the task the space reads as.
++        return { w, i, g: this.git[key] ?? null, wr: this.wrappers[key] ?? null };
++      })
+       .filter((r) => this.shown.has(r.w.id));
+     const mains = new Set(list.filter((r) => r.g && !r.g.linked).map((r) => r.g.repo));
+     const nested = (r) => r.g?.linked && mains.has(r.g.repo);
+@@ -375,7 +746,16 @@ export default class Spaces extends View {
+   // The rows, under a header per machine once one isn't this computer.
+   grouped(t, collapsed) {
+     const rows = this.ordered();
+-    const draw = (r) => (collapsed ? this.compact(r, t) : this.row(r, t));
++    // status glow: spaces with a working agent, from agents() (not the aggregate status), and
++    // whether one of them is in the tab open on the right.
++    const here = focused();
++    const busy = agents().filter((a) => a.status === "working");
++    const working = new Set(busy.map((a) => a.space));
++    const open = busy.some((a) => a.space === here?.space && a.tab === here?.tab) ? here.space : null;
++    const draw = (r) => {
++      const row = { ...r, working: working.has(r.w.id) && (r.w.id === open ? "open" : true) };
++      return collapsed ? this.compact(row, t) : this.row(row, t);
++    };
+     const remote = [
+       ...new Set([
+         ...rows.map((r) => r.w.machine).filter(Boolean),
+@@ -393,7 +773,7 @@ export default class Spaces extends View {
+     const loadingRow = (m) =>
+       div()
+         .id(`machine-loading-${m ?? "local"}`)
+-        .h(28)
++        .h(rowPx(28)) // sidebar size
+         .flex_none()
+         .px(8)
+         .text_size(em(0.95))
+@@ -408,7 +788,7 @@ export default class Spaces extends View {
+       const folded = this.folded.has(m);
+       const head = h_flex()
+         .id(`machine-${m ?? "local"}`)
+-        .h(26)
++        .h(rowPx(26)) // sidebar size
+         .flex_none()
+         .px(collapsed ? 2 : 8)
+         .gap(7)
+@@ -472,7 +852,7 @@ export default class Spaces extends View {
+         );
+       const empty = h_flex()
+         .id(`machine-new-${m ?? "local"}`)
+-        .h(28)
++        .h(rowPx(28)) // sidebar size
+         .flex_none()
+         .px(8)
+         .gap(7)
+@@ -610,7 +990,7 @@ export default class Spaces extends View {
+     const status = this.checkoutStatus(w);
+     return h_flex()
+       .id(`space-pr-line-${w.id}`)
+-      .h(20)
++      .h(rowPx(20)) // sidebar size
+       .pl(tree ? 44 : 27)
+       .gap(6)
+       .items_center()
+@@ -629,22 +1009,27 @@ export default class Spaces extends View {
+   }
+   // ── Expanded/compact rows and sidebar rendering ──────────────────────────
+ 
+-  row({ w, i, g, tree }, t) {
++  row({ w, i, g, wr, tree, working }, t) {
+     const on = w.active;
+     const status = this.checkoutStatus(w);
+-    const hasPRLine = Boolean(status?.prs.length || status?.error);
++    const hasPRLine = !wr && Boolean(status?.prs.length || status?.error); // wrapper repos: no PR status on a task row
+     const colors = shared("space.colors") ?? {};
+     const color = colors[w.id] ?? "ansi6";
+     const fill = color.startsWith("#") ? color : (AVATAR_COLORS[color] ?? t[color]);
++    const ports = this.ports?.[w.id] ?? []; // dev ports
++    // wrapper repos: a task row is named after its repo (one) or task folder (several) unless
++    // the person named the space, and takes the row's width (its branch or project goes under it).
++    const label = wr && !w.named ? wr.name : w.name;
++    const letter = initials(label); // space initials
+     return v_flex()
+       .relative()
+       .id(`space-${w.id}`)
+       .px(8)
+-      .h(rowHeight({ tree }) + (hasPRLine ? 22 : 0))
++      .h(rowHeight({ tree }) + (hasPRLine ? rowPx(22) : 0) + (ports.length + (wr ? 1 : 0)) * this.portLineHeight()) // wrapper repos, sidebar size
+       .flex_none()
+       .justify_center()
+       .rounded(8)
+-      .when(on, (el) => el.bg(t.selected))
++      .when(on, (el) => el.bg(`${CURRENT}33`).child(currentBar())) // current highlight
+       .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
+       .when(this.pressed === i && this.over !== i, (el) => el.opacity(0.5))
+       .when(this.pressed !== null && this.over === i && this.pressed !== i, (el) =>
+@@ -682,6 +1067,8 @@ export default class Spaces extends View {
+         cx.notify();
+       })
+       .on_mouse_down("right", () => this.menu(w))
++      .when(Boolean(working), (el) => el.child(workPulse(w.id, t, working === "open"))) // status glow
++      .children(glow(w.status)) // status glow
+       .child(
+         h_flex()
+           .gap(9)
+@@ -698,37 +1085,45 @@ export default class Spaces extends View {
+                 .bg(fill)
+                 .items_center()
+                 .justify_center()
+-                .text_size(em(0.82))
++                .text_size(em(letter.length > 1 ? 0.66 : 0.82)) // space initials
+                 .font_bold()
+                 .text_color("#ffffff")
+-                .child([...w.name][0]?.toUpperCase() ?? "?"),
++                .child(letter), // space initials
+             ),
+           )
+           .child(
+             div()
+               .min_w(0)
+-              .max_w(150)
++              .when(Boolean(wr), (el) => el.flex_1()) // wrapper repos
++              .when(!wr, (el) => el.max_w(150))
+               .truncate()
+-              .tooltip(w.name)
++              .tooltip(wr ? this.taskTip(w, wr) : w.name) // wrapper repos
+               .text_color(t.foreground)
+-              .child(w.name),
++              .when(on, (el) => el.font_semibold()) // current highlight
++              .child(label), // wrapper repos
+           )
+-          .child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1()),
++          .when(!wr, (el) => el.child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1())), // wrapper repos
+       )
++      .when(Boolean(wr), (el) => el.child(this.taskLine(w, wr, tree, t))) // wrapper repos
++      .children(ports.map((p) => this.portLine(p, ports.length > 1, tree, t))) // dev ports
+       .when(hasPRLine, (el) => el.child(this.prLine(w, t, Boolean(tree))));
+   }
+ 
+-  compact({ w, i }, t) {
+-    const badge = this.prBadge(w, t, true);
++  compact({ w, i, wr, working }, t) {
++    const badge = !wr && this.prBadge(w, t, true); // wrapper repos: no PR status on a task row
+     return h_flex()
+       .id(`space-${w.id}`)
+-      .h(26)
++      .relative() // status glow
++      .rounded(8) // status glow
++      .h(rowPx(26)) // sidebar size
+       .flex_none()
+       .justify_center()
+       .gap(4)
+-      .when(w.active, (el) => el.bg(t.raised))
++      .when(w.active, (el) => el.bg(`${CURRENT}33`).child(currentBar())) // current highlight
+       .hover((s) => s.bg(t.hover))
+       .on_click(() => run("space.select", { id: w.id }))
++      .when(Boolean(working), (el) => el.child(workPulse(w.id, t, working === "open"))) // status glow
++      .children(glow(w.status)) // status glow
+       .child(
+         div()
+           .text_color(w.active ? t.foreground : t.muted)
+@@ -741,6 +1136,11 @@ export default class Spaces extends View {
+   // Share avatar colors with Herdr's own space menus. Do this during data
+   // synchronization, never render: setShared itself schedules a redraw.
+   updateColors(sp) {
++    // space colors: a copy that just started can see no spaces or no shared colors yet.
++    // Assigning then recolored every space, so wait until both are there or 2 s passed.
++    this.startedAt ??= Date.now();
++    if (!sp.length || (shared("space.colors") === undefined && Date.now() - this.startedAt < 2000))
++      return;
+     const palette = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
+     const ids = new Set(sp.map((p) => p.id));
+     const kept = Object.fromEntries(
+@@ -772,7 +1172,7 @@ export default class Spaces extends View {
+       })
+       .child(
+         h_flex()
+-          .h(31)
++          .h(rowPx(31)) // sidebar size
+           .pl(16)
+           .pr(10)
+           .items_center()
+diff --git a/typography.js b/typography.js
+index 4066bed..122e570 100644
+--- a/typography.js
++++ b/typography.js
+@@ -1,12 +1,28 @@
+ // Herdr's mod API accepts px/rem, so resolve em-like multipliers from its live font settings.
+-import { settings } from "herdr";
++import { settings, props } from "herdr";
++
++// sidebar size: the layout block's `font_size` (the px every text size scales from) and
++// `row_scale` (every row height times it; 1 keeps upstream's).
++/** @param {string} key */
++function own(key) {
++  const n = Number(props()?.[key]);
++  return Number.isFinite(n) && n > 0 ? n : null;
++}
+ 
+ export function em(multiplier = 1) {
++  const size = own("font_size"); // sidebar size
++  if (size) return size * multiplier;
+   const config = settings();
+   const base = Number(config.ui_font_size ?? config.font_size);
+   return (Number.isFinite(base) && base > 0 ? base : 14) * multiplier;
+ }
+ 
++/** @param {number} px */
++export function rowPx(px) {
++  const scale = own("row_scale"); // sidebar size
++  return scale ? Math.round(px * scale) : px;
++}
++
+ export function codeFont() {
+   const config = settings();
+   return config.font_family ?? config.font ?? config.ui_font_family ?? config.ui_font;

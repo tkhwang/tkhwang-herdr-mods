@@ -1,0 +1,245 @@
+diff --git a/main.js b/main.js
+index 7c16c68..84d07ba 100644
+--- a/main.js
++++ b/main.js
+@@ -8,12 +8,19 @@ function location() {
+   const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
+   return { cwd: pane?.cwd || f?.cwd || space?.folder, on };
+ }
+-const key = () => JSON.stringify(location());
+ // Reads write nothing under .git (no index refresh or lock, no fsmonitor cookie):
+ // the folder watch would see it, and every refresh would start the next one.
+ const READ = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "diff.autoRefreshIndex=false"];
+ const countLines = (text) => text ? text.split("\n").length - Number(text.endsWith("\n")) : 0;
+ 
++// wrapper repos: a folder that isn't a git repo itself but holds repos right under it
++// (a workbranch task: backend/ and frontend/ side by side). Prints those folders' names,
++// hidden ones included.
++const CHILD_REPOS = 'for d in */ .[!.]*/; do [ -e "$d.git" ] && printf "%s\\n" "${d%/}"; done; exit 0';
++// wrapper repos: the same folder on two machines is two wrappers, so a pick is kept per
++// machine and folder. A local folder's key is its path alone.
++const pickKey = ({ cwd, on }) => (on ? `${on}\0${cwd}` : cwd);
++
+ // Numbers each diff line once, so a frame only draws the rows on screen.
+ function diffRows(lines) {
+   let old = 0, next = 0;
+@@ -31,6 +38,12 @@ function diffRows(lines) {
+ export default class Changes extends View {
+   init(_props, cx) {
+     this.files = []; this.rows = []; this.diffWidth = 0; this.message = ""; this.handle = cx.focus_handle();
++    // wrapper repos: the repos under the shown wrapper folder, and the one picked per folder.
++    this.choices = null; this.branch = null;
++    try {
++      const saved = JSON.parse(localStorage.getItem("picked") ?? "{}");
++      this.picked = saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
++    } catch { this.picked = {}; }
+     this.input = InputState.new({ placeholder: "Commit message" });
+     this.input.on("change", (_e, cx) => {
+       const hadMessage = Boolean(this.message.trim());
+@@ -44,6 +57,37 @@ export default class Changes extends View {
+     cx.timer.every(10000, (cx) => this.refresh(cx));
+   }
+ 
++  // wrapper repos: what the panel shows is where the focused terminal is, plus the repo picked there.
++  key() {
++    const loc = location();
++    return JSON.stringify([loc, this.picked[pickKey(loc)] ?? null]);
++  }
++
++  savePicked() {
++    localStorage.setItem("picked", JSON.stringify(this.picked));
++  }
++
++  pickRepo(name, cx) {
++    const loc = location(), at = pickKey(loc);
++    if (!loc.cwd || this.picked[at] === name) return;
++    this.picked[at] = name;
++    this.savePicked();
++    this.refresh(cx);
++    cx.notify();
++  }
++
++  // The git repos right under `cwd`, each with how many files changed in it.
++  async childRepos(cwd, on) {
++    const ls = await exec("sh", ["-c", CHILD_REPOS], { cwd, on });
++    if (ls.code !== 0) return [];
++    const base = cwd.replace(/\/+$/, "");
++    return Promise.all(ls.stdout.split("\n").filter(Boolean).map(async (name) => {
++      const root = `${base}/${name}`;
++      const s = await exec("git", [...READ, "status", "--porcelain=v1", "-z", "--untracked-files=all"], { cwd: root, on });
++      return { name, root, count: s.code === 0 ? s.stdout.split("\0").filter(Boolean).length : 0 };
++    }));
++  }
++
+   watch(root, cx) {
+     if (this.on || this.watched === root) return;
+     this.watched = root;
+@@ -59,8 +103,12 @@ export default class Changes extends View {
+ 
+   refresh(cx) {
+     if (this.loading || this.busy) return;
+-    const { cwd, on } = location(), context = key();
++    const { cwd, on } = location();
++    let context = this.key();
+     if (context !== this.context) {
++      // Picking another repo keeps the repo buttons; moving to another folder drops them.
++      const loc = JSON.stringify({ cwd, on });
++      if (loc !== this.loc) { this.loc = loc; this.choices = null; this.branch = null; }
+       this.context = context; this.root = null; this.files = []; this.open = null;
+       this.setLines([]); this.message = ""; this.input.set_value(""); this.error = null; this.note = null; this.watched = null; this.closed = false; this.limited = false;
+     }
+@@ -69,12 +117,31 @@ export default class Changes extends View {
+     cx.spawn(async (cx) => {
+       try {
+         const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on });
+-        if (key() !== context) return;
+-        if (top.code !== 0) { this.root = null; this.files = []; this.setLines([]); this.open = null; this.error = "Not a git repository"; return; }
+-        const root = top.stdout.trim(), git = (args) => exec("git", [...READ, ...args], { cwd: root, on });
++        if (this.key() !== context) return;
++        let root, pick = null;
++        if (top.code === 0) { root = top.stdout.trim(); this.choices = null; }
++        else {
++          // wrapper repos: not a repo itself; show the picked repo under it.
++          const choices = await this.childRepos(cwd, on);
++          if (this.key() !== context) return;
++          if (!choices.length) { this.choices = null; this.root = null; this.files = []; this.setLines([]); this.open = null; this.error = "Not a git repository"; return; }
++          this.choices = choices;
++          const at = pickKey({ cwd, on });
++          pick = choices.find((r) => r.name === this.picked[at]);
++          if (!pick) {
++            // First visit (or the picked one is gone): the first repo with changes, else the first.
++            pick = choices.find((r) => r.count > 0) ?? choices[0];
++            this.picked[at] = pick.name;
++            this.savePicked();
++            context = this.context = this.key();
++          }
++          root = pick.root;
++        }
++        const git = (args) => exec("git", [...READ, ...args], { cwd: root, on });
+         const status = await git(["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all"]);
+         if (status.code !== 0) throw new Error(status.stderr);
+         const head = await git(["rev-parse", "--verify", "HEAD"]);
++        const branch = pick ? await git(["branch", "--show-current"]) : null;
+         const stats = {};
+         const results = head.code === 0 ? [await git(["diff", "HEAD", "--numstat", "-z", "--no-renames"])] : [await git(["diff", "--cached", "--numstat", "-z", "--no-renames"]), await git(["diff", "--numstat", "-z", "--no-renames"])];
+         for (const result of results) {
+@@ -95,7 +162,9 @@ export default class Changes extends View {
+           const stat = stats[path] ?? { add: 0, del: 0 };
+           files.push({ path, status: s, fresh, ...stat });
+         }
+-        if (key() !== context) return;
++        if (this.key() !== context) return;
++        if (pick) pick.count = entries.length;
++        this.branch = branch?.code === 0 ? branch.stdout.trim() || null : null;
+         this.root = root; this.on = on; this.hasHead = head.code === 0; this.files = files; this.limited = entries.length > 1000; this.error = null;
+         this.watch(root, cx);
+         if (this.open && !files.some((f) => f.path === this.open)) { this.open = null; this.setLines([]); }
+@@ -103,9 +172,9 @@ export default class Changes extends View {
+         if (!this.open && !this.closed && files.length) this.open = files[0].path;
+         if (this.open) {
+           try { await this.load(this.open, context); }
+-          catch { if (key() === context) this.setLines(["Cannot preview this diff (too large or unreadable)"]); }
++          catch { if (this.key() === context) this.setLines(["Cannot preview this diff (too large or unreadable)"]); }
+         }
+-      } catch (e) { if (key() === context) this.error = String(e); }
++      } catch (e) { if (this.key() === context) this.error = String(e); }
+       finally { this.loading = false; cx.notify(); }
+     });
+   }
+@@ -128,7 +197,7 @@ export default class Changes extends View {
+       const all = r.stdout.replace(/\n$/, "").split("\n"), first = all.findIndex((l) => l.startsWith("@@"));
+       lines = first < 0 ? [file.binary ? "Binary file changed" : "No text diff available"] : all.slice(first);
+     }
+-    if (key() === context && this.open === path) this.setLines(lines.slice(0, 1500).map(line => line.length > 4000 ? line.slice(0, 4000) + "… (line truncated)" : line));
++    if (this.key() === context && this.open === path) this.setLines(lines.slice(0, 1500).map(line => line.length > 4000 ? line.slice(0, 4000) + "… (line truncated)" : line));
+   }
+ 
+   setLines(lines) {
+@@ -142,14 +211,14 @@ export default class Changes extends View {
+     const context = this.context;
+     if (this.open) cx.spawn(async (cx) => {
+       try { await this.load(path, context); }
+-      catch (e) { if (key() === context && this.open === path) this.note = `Cannot preview this diff (too large or unreadable): ${e}`; }
++      catch (e) { if (this.key() === context && this.open === path) this.note = `Cannot preview this diff (too large or unreadable): ${e}`; }
+       cx.notify();
+     });
+     cx.notify();
+   }
+ 
+   commit(cx) {
+-    if (!this.message.trim() || !this.root || this.busy || this.loading || this.context !== key()) return;
++    if (!this.message.trim() || !this.root || this.busy || this.loading || this.context !== this.key()) return;
+     const root = this.root, on = this.on, context = this.context, message = this.message.trim();
+     this.busy = true; this.note = null;
+     cx.spawn(async (cx) => {
+@@ -158,8 +227,8 @@ export default class Changes extends View {
+           const r = await exec("git", args, { cwd: root, on });
+           if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim());
+         }
+-        if (key() === context) { this.message = ""; this.input.set_value(""); }
+-      } catch (e) { if (key() === context) this.note = `Commit failed: ${e}`; }
++        if (this.key() === context) { this.message = ""; this.input.set_value(""); }
++      } catch (e) { if (this.key() === context) this.note = `Commit failed: ${e}`; }
+       finally { this.busy = false; this.refresh(cx); cx.notify(); }
+     });
+     cx.notify();
+@@ -172,10 +241,28 @@ export default class Changes extends View {
+       .child(div().flex_1().min_w(0).truncate().child(text));
+   }
+ 
++  // wrapper repos: one button per repo under the wrapper folder, with its changed-file count;
++  // the picked repo's branch on the right.
++  repoBar(t) {
++    const picked = this.picked[pickKey(location())];
++    return h_flex().h(36).flex_none().px(8).gap(4).items_center().border_b(1).border_color(t.border)
++      .children(this.choices.map((r) => {
++        const on = r.name === picked;
++        return h_flex().id(`repo-${r.name}`).h(26).px(9).gap(6).flex_none().items_center().rounded(6).text_size(12)
++          .bg(on ? t.selected : t.background).text_color(on ? t.foreground : t.muted).when(on, (e) => e.font_semibold())
++          .cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.pickRepo(r.name, cx))
++          .child(r.name)
++          .when(r.count > 0, (e) => e.child(div().px(5).rounded(4).bg(t.raised).text_size(10).text_color(on ? t.foreground : t.dim).child(String(r.count))));
++      }))
++      .child(div().flex_1())
++      .when(Boolean(this.branch), (e) => e.child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(this.branch)));
++  }
++
+   render(cx) {
+-    if (key() !== this.context) this.refresh(cx);
++    if (this.key() !== this.context) this.refresh(cx);
+     const t = theme(), add = this.files.reduce((n, f) => n + f.add, 0), del = this.files.reduce((n, f) => n + f.del, 0);
+     const enabled = Boolean(this.message.trim() && this.root && !this.busy && !this.loading);
++    const target = this.choices ? this.picked[pickKey(location())] : null;
+     return v_flex().id("changes").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
+       .on_key_down((e, cx) => {
+         if (e.key === "escape" && this.typing) { this.typing = false; this.handle.focus(); cx.stop_propagation(); cx.notify(); }
+@@ -184,6 +271,7 @@ export default class Changes extends View {
+         .child(div().font_semibold().child("Changes"))
+         .child(div().px(5).py(1).rounded(4).border_1().border_color(t.border).text_size(10).text_color(t.muted).child(`${this.files.length} files`))
+         .child(div().flex_1()).child(div().text_size(11).text_color(t.ansi2).child(`+${add}`)).child(div().text_size(11).text_color(t.ansi1).child(`−${del}`)))
++      .when(Boolean(this.choices), (e) => e.child(this.repoBar(t)))
+       .child(v_flex().id("changes-list").flex_none().h(Math.min(200, Math.max(44, this.files.length * 28 + 12))).overflow_y_scrollbar().p(6).border_b(1).border_color(t.border).children(this.files.map((f) => {
+         const parts = f.path.split("/"), name = parts.pop();
+         return h_flex().id(`change-${f.path}`).h(28).flex_none().px(8).gap(8).items_center().rounded(7).cursor_pointer().when(this.open === f.path, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.pick(f.path, cx))
+@@ -201,6 +289,6 @@ export default class Changes extends View {
+       .when(Boolean(this.note), (e) => e.child(div().px(10).pb(8).text_size(11).text_color(t.ansi1).child(this.note)))
+       .child(h_flex().flex_none().p(10).gap(8).border_t(1).border_color(t.border)
+         .child(div().id("commit-message").flex_1().min_w(0).h(32).px(10).flex().items_center().rounded(8).border_1().border_color(this.typing ? t.accent : t.border).cursor_text().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.input).h_full().text_size(12).text_color(t.foreground)))
+-        .child(div().id("commit").h(32).px(14).flex().items_center().rounded(8).bg(enabled ? t.solid : t.raised).text_color(enabled ? t.solid_foreground : t.dim).text_size(12).when(enabled, (e) => e.cursor_pointer()).on_click((_e, cx) => this.commit(cx)).child(this.busy ? "Committing…" : "Commit")));
++        .child(div().id("commit").h(32).px(14).flex().items_center().rounded(8).bg(enabled ? t.solid : t.raised).text_color(enabled ? t.solid_foreground : t.dim).text_size(12).when(enabled, (e) => e.cursor_pointer()).on_click((_e, cx) => this.commit(cx)).child(this.busy ? "Committing…" : target ? `Commit ${target}` : "Commit")));
+   }
+ }
+diff --git a/mod.json b/mod.json
+index b3f0dbf..30e784b 100644
+--- a/mod.json
++++ b/mod.json
+@@ -1 +1,7 @@
+-{ "place": "none" }
++{
++  "place": "none",
++  "cloned_from": {
++    "name": "changes",
++    "version": "0.1.11"
++  }
++}
+\ No newline at end of file

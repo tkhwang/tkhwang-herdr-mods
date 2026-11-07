@@ -1,0 +1,964 @@
+diff --git a/main.js b/main.js
+index a893bae..2b107a0 100644
+--- a/main.js
++++ b/main.js
+@@ -1,9 +1,27 @@
++// Changed from munza/herdr-mods@77d94f7: a repo picker for workbranch wrapper folders
++// (code marked "wrapper repos"), a multi-line commit message box with the buttons under it
++// (marked "commit box"), a button that asks an AI for the commit message (marked "ai message"),
++// a Push button beside Commit (marked "push button"), the folder kept while the tab bar's Markdown viewer tab is shown (marked "markdown tab", with
++// markdown.js), the folder Files and Git show too, with the folder bar under the header (marked "panel folder", with
++// panel-folder.js), the panel and its diff tab in the font, size and line height the layout's Changes
++// block sets (marked "changes font", with typography.js), and mod.json "place" is "none" (it sits in the
++// Changes slot).
+ // Sidebar status/commit controls and a reusable diff-tab view share this class.
+ // Pure Git-output parsing and diff-row transformations live in model.js.
+-import { em, codeFont } from "./typography.js";
+-import { changedFiles, fileTree, diffRows, splitDiffRows } from "./model.js";
++import {
++  em,
++  codeFont,
++  publishLook,
++  changesFont,
++  lineHeight,
++  diffLineHeight,
++  listRowHeight,
++} from "./typography.js";
++import { changedFiles, fileTree, diffRows, splitDiffRows, aiPrompt, aiMessage } from "./model.js";
++import { markdownTab } from "./markdown.js"; // markdown tab
++import { panelFolder, folderBar } from "./panel-folder.js"; // panel folder
+ import { View, div, svg } from "gpui-kit";
+-import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list } from "gpui-base";
++import { v_flex, h_flex, TextareaState, Textarea, Scrollbar, v_virtual_list } from "gpui-base";
+ import {
+   spaces,
+   panes,
+@@ -36,26 +54,62 @@ const CONTEXT_POLL_MS = 300;
+ const STATUS_POLL_MS = 10000;
+ const TAB_OPEN_TIMEOUT_MS = 1500;
+ 
+-// Follow the active terminal unless the active tab is our diff viewer. Mod panes
+-// have no terminal cwd, so that case must use the repository saved for the tab.
+-function location() {
++// ai message: the program that turns the prompt (its last argument) into a commit subject on
++// stdout, run in the repository on the space's machine. Claude Code's print mode with no
++// tools, no saved session and no settings files (hooks and plugins would only slow it down):
++// about 3 s on sonnet, a second less on haiku, which words it a little worse. Any CLI that
++// prints just the message works here. AI_EXAMPLES recent commit messages from the repository
++// go in the prompt as its style (prefix, language, whether a body is written).
++const AI_COMMAND = ["claude", "-p", "--tools", "", "--no-session-persistence", "--setting-sources", "", "--output-format", "text", "--model", "sonnet"];
++const AI_EXAMPLES = 8;
++
++// commit box: how the row under the message box splits between its three buttons, as flex
++// weights after the gaps: Message (ai message), Commit, and Push (push button). A narrow panel
++// keeps every icon and ends a label that doesn't fit in "…".
++const BUTTON_WEIGHTS = { message: 1, commit: 2, push: 1 };
++const buttonLabel = (text) => div().min_w(0).truncate().child(text);
++
++// wrapper repos: a folder that isn't a Git repo itself but holds repos right under it
++// (a workbranch task: backend/ and frontend/ side by side). Prints those folders' names,
++// hidden ones included.
++const CHILD_REPOS = 'for d in */ .[!.]*/; do [ -e "$d.git" ] && printf "%s\\n" "${d%/}"; done; exit 0';
++// wrapper repos: the same folder on two machines is two wrappers, so a pick is kept per
++// machine and folder. A local folder's key is its path alone.
++const pickKey = (cwd, on) => (on ? `${on}\0${cwd}` : cwd);
++
++// panel folder: follow the folder all three side panels show (panel-folder.js) unless the active
++// tab is our diff viewer. Mod panes have no terminal cwd, so that case must use the repository
++// saved for the tab.
++// wrapper repos: `diffTab` says the location is that saved repository.
++function locate() {
+   const space = spaces().find((s) => s.active);
+   const tab = space?.tabs?.find((t) => t.active)?.id;
+   const candidates = panes().filter((p) => p.tab === tab && p.cwd);
+   if (!candidates.length && panes().some((p) => p.tab === tab && p.mod === "better-changes")) {
+     const source = (shared("better-changes.diff-tabs") ?? {})[space?.id]?.source;
+-    if (source) return source;
++    if (source) return { loc: source, diffTab: true };
+   }
++  // markdown tab: the Markdown viewer tab has no terminal either; stay where it was opened from
++  // (diffTab: a wrapper's repo keeps its bar, as for a diff tab).
++  if (!candidates.length) {
++    const md = markdownTab(space?.id);
++    if (md && md.tab === tab && md.cwd) return { loc: { cwd: md.cwd, on: md.on ?? null }, diffTab: true };
++  }
++  // panel folder: the tab's main pane, or the pane or folder picked for the tab, never just
++  // the focused pane: the panel holds still as the focus moves, and shows what Files and Git show.
++  const shown = panelFolder();
+   return {
+-    cwd:
+-      candidates.find((p) => p.focused)?.cwd ??
+-      candidates[0]?.cwd ??
+-      focused()?.cwd ??
+-      space?.folder,
+-    on: space?.machine ?? null,
++    loc: shown
++      ? { cwd: shown.cwd, on: shown.on }
++      : { cwd: focused()?.cwd ?? space?.folder, on: space?.machine ?? null },
++    diffTab: false,
+   };
+ }
+ 
++function location() {
++  return locate().loc;
++}
++
+ // One View class serves two roles: a sidebar and a regular diff tab. Each copy
+ // owns its local state; shared("better-changes.*") connects the separate copies.
+ export default class Changes extends View {
+@@ -72,20 +126,30 @@ export default class Changes extends View {
+       (localStorage.getItem("better-changes.diff-layout") === "split" ? "split" : "inline");
+     if (this.mode === "sidebar" || !shared("better-changes.diff-layout"))
+       setShared("better-changes.diff-layout", this.diffLayout);
++    if (this.mode === "sidebar") publishLook(props() ?? _props); // changes font
+     // Local display state. Collapsed folders use "scope:path" keys so staged
+     // and unstaged groups can collapse the same directory independently.
+     this.splitOffset = 0;
++    // wrapper repos: known wrapper folders, and the repo picked in each (kept).
++    this.wrappers = {};
++    try {
++      this.picked = JSON.parse(localStorage.getItem("better-changes.picked") ?? "{}") ?? {};
++    } catch {
++      this.picked = {};
++    }
+     this.closed = new Set();
+     this.files = [];
+     this.rows = [];
+     this.diffToken = 0; // Monotonically increasing ID for async preview requests.
+     this.message = "";
+-    this.input = InputState.new({ placeholder: "Commit message…" });
++    // commit box: a multi-line box that grows with the message (subject, blank line, body).
++    this.input = TextareaState.new({ placeholder: "Commit message…", rows: 3 });
++    this.input.set_auto_grow(3, 8);
+     this.input.on("change", (_e, cx) => {
+       this.message = this.input.value();
+       cx.notify();
+     });
+-    this.input.on("submit", (_e, cx) => this.commit(cx));
++    this.input.on("submit", (_e, cx) => this.whenLoaded((cx) => this.commit(cx), cx)); // commit box
+     this.startPolling(cx);
+     this.listenForCommands(cx);
+     this.refresh(cx);
+@@ -168,7 +232,63 @@ export default class Changes extends View {
+       ? ((shared("better-changes.diff-tabs") ?? {})[this.diffSpace]?.source ??
+           this.source ??
+           location())
+-      : (this.source ?? location());
++      : (this.source ?? this.wrapperSpot().loc);
++  }
++
++  // wrapper repos: in a known wrapper folder the sidebar reads the repo picked there,
++  // and a diff tab opened from one of its repos keeps the repo bar. Returns where to
++  // read Git and the wrapper whose bar shows (null: none).
++  wrapperSpot() {
++    const { loc, diffTab } = locate();
++    const on = loc.on ?? null;
++    const wrapper = Object.values(this.wrappers).find(
++      (w) =>
++        w.on === on &&
++        (w.cwd === loc.cwd || (diffTab && w.choices.some((c) => c.root === loc.cwd))),
++    );
++    const pick = wrapper?.choices.find((c) => c.name === this.picked[pickKey(wrapper.cwd, wrapper.on)]);
++    return pick ? { loc: { cwd: pick.root, on: loc.on }, wrapper } : { loc, wrapper: null };
++  }
++
++  // The Git repos right under `cwd`, each with how many files changed in it.
++  async childRepos(cwd, on) {
++    const ls = await exec("sh", ["-c", CHILD_REPOS], { cwd, on });
++    if (ls.code !== 0) return [];
++    const base = cwd.replace(/\/+$/, "");
++    return Promise.all(
++      ls.stdout
++        .split("\n")
++        .filter(Boolean)
++        .map(async (name) => {
++          const root = `${base}/${name}`;
++          const s = await this.git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], root, on);
++          return { name, root, count: s.code === 0 ? s.stdout.split("\0").filter(Boolean).length : 0 };
++        }),
++    );
++  }
++
++  pickRepo(wrapper, name, cx) {
++    const at = pickKey(wrapper.cwd, wrapper.on);
++    if (this.picked[at] === name) return;
++    this.picked[at] = name;
++    this.savePicked();
++    this.refresh(cx);
++    cx.notify();
++  }
++
++  savePicked() {
++    localStorage.setItem("better-changes.picked", JSON.stringify(this.picked));
++  }
++
++  // wrapper repos: when the picked repo is gone (deleted, or no longer a repo), rescan its
++  // wrapper. Without the pick listed, contextKey() moves to the wrapper and `finally`
++  // loads that, which picks a remaining repo. Returns whether the context moved.
++  async leaveGonePick(context) {
++    const { wrapper } = this.mode === "sidebar" && !this.source ? this.wrapperSpot() : { wrapper: null };
++    if (!wrapper) return false;
++    const choices = await this.childRepos(wrapper.cwd, wrapper.on).catch(() => null);
++    if (choices && context === this.contextKey()) wrapper.choices = choices;
++    return context !== this.contextKey();
+   }
+ 
+   // Include both cwd and machine: identical paths on different machines are
+@@ -213,6 +333,8 @@ export default class Changes extends View {
+       this.error = null;
+       this.note = null;
+       this.watched = null;
++      this.branch = null;
++      this.pushTo = null; // push button
+       this.message = "";
+       this.input.set_value("");
+     }
+@@ -224,6 +346,23 @@ export default class Changes extends View {
+         const top = await this.git(["rev-parse", "--show-toplevel"], cwd, on);
+         if (context !== this.contextKey()) return;
+         if (top.code !== 0) {
++          // wrapper repos: not a repo, but maybe a folder of repos. Once it's known,
++          // contextKey() points into the picked repo and `finally` loads that.
++          if (this.mode === "sidebar" && !this.source) {
++            const choices = await this.childRepos(cwd, on);
++            if (context !== this.contextKey()) return;
++            if (choices.length) {
++              this.wrappers[`${on ?? ""}\0${cwd}`] = { cwd, on: on ?? null, choices };
++              const at = pickKey(cwd, on);
++              if (!choices.some((c) => c.name === this.picked[at])) {
++                // First visit, or the picked repo is gone: the first with changes, else the first.
++                this.picked[at] = (choices.find((c) => c.count > 0) ?? choices[0]).name;
++                this.savePicked();
++              }
++              return;
++            }
++          }
++          if (await this.leaveGonePick(context)) return;
+           this.root = null;
+           this.files = [];
+           this.rows = [];
+@@ -249,7 +388,20 @@ export default class Changes extends View {
+         ];
+         for (const stat of stats)
+           if (stat.code !== 0) throw Error(stat.stderr || "Cannot read change statistics");
++        // wrapper repos: keep the repo bar's counts and the picked repo's branch current.
++        const spot = this.mode === "sidebar" && !this.source ? this.wrapperSpot() : null;
++        let branch = null;
++        let choices = null;
++        if (spot?.wrapper) {
++          const b = await git(["branch", "--show-current"]);
++          branch = b.code === 0 ? b.stdout.trim() || null : null;
++          choices = await this.childRepos(spot.wrapper.cwd, spot.wrapper.on);
++        }
++        const pushTo = this.mode === "sidebar" && hasHead ? await this.pushTarget(git) : null; // push button
+         if (context !== this.contextKey()) return;
++        if (choices?.length) spot.wrapper.choices = choices;
++        this.branch = branch;
++        this.pushTo = pushTo; // push button
+         const files = changedFiles(
+           status.stdout,
+           stats.map((r) => r.stdout),
+@@ -269,14 +421,72 @@ export default class Changes extends View {
+           if (this.path && !this.diffLoading) this.loadDiff(cx);
+         }
+       } catch (error) {
+-        if (context === this.contextKey()) this.error = error.message;
++        // wrapper repos: Git can't start in a deleted repo folder; leave a pick that is gone.
++        if (context === this.contextKey() && !(await this.leaveGonePick(context)))
++          this.error = error.message;
+       } finally {
+         this.loading = false;
+         cx.notify();
++        // commit box: a button pressed during this refresh runs now, on the fresh state (its own
++        // checks still apply); one pressed before the panel moved to another repo is dropped.
++        const queued = this.queued;
++        this.queued = null;
++        // wrapper repos: a wrapper just found (or a repo picked meanwhile) moved the
++        // context; load it now rather than at the next poll.
++        if (this.contextKey() !== this.context) this.refresh(cx);
++        else if (queued && context === this.context) queued(cx);
+       }
+     });
+   }
+ 
++  // commit box: run a footer button's action now, or right after a background refresh in flight.
++  // The buttons keep their look during one, so a press then must not be lost.
++  whenLoaded(action, cx) {
++    if (this.loading) this.queued = action;
++    else action(cx);
++  }
++
++  // push button: where Push sends HEAD. With an upstream branch on a remote, HEAD goes to that
++  // branch, and the counts say how far it is ahead and behind as of the last fetch. Without one
++  // (or with one that is gone), the branch goes to its remote, else origin, else the only remote,
++  // under its own name, and is tracked from then on; `ahead` is then what that remote lacks, so a
++  // branch with nothing new (one just made, or pushed from a terminal without -u) has nothing to
++  // push either. Null on a detached HEAD.
++  async pushTarget(git) {
++    const head = await git(["symbolic-ref", "-q", "--short", "HEAD"]);
++    if (head.code !== 0) return null;
++    const branch = head.stdout.trim();
++    const up = await git([
++      "for-each-ref",
++      "--format=%(upstream:remotename)%00%(upstream:remoteref)%00%(upstream:short)",
++      `refs/heads/${branch}`,
++    ]);
++    const [remote = "", ref = "", name = ""] = up.code === 0 ? up.stdout.replace(/\n$/, "").split("\0") : [];
++    // An upstream that is another local branch: pushing would move that branch, so no Push.
++    if (remote === ".") return { branch, local: name || ref };
++    if (remote && ref) {
++      const counts = await git(["rev-list", "--count", "--left-right", "@{upstream}...HEAD"]);
++      if (counts.code === 0) {
++        const [behind, ahead] = counts.stdout.trim().split(/\s+/).map(Number);
++        return { branch, remote, ref, name, ahead, behind, tracked: true };
++      }
++    }
++    const remotes = await git(["remote"]);
++    const names = remotes.code === 0 ? remotes.stdout.split("\n").map((s) => s.trim()).filter(Boolean) : [];
++    const to = names.includes(remote) ? remote : names.includes("origin") ? "origin" : names.length === 1 ? names[0] : null;
++    if (!to) return { branch, remote: null, tracked: false };
++    // Ahead of the remote's branch of this name when it has one (where `push -u` goes), else of
++    // every branch the remote has, so a branch just made off one of them counts as nothing to push.
++    const same = await git(["rev-parse", "-q", "--verify", `refs/remotes/${to}/${branch}`]);
++    if (same.code === 0) {
++      const counts = await git(["rev-list", "--count", "--left-right", `refs/remotes/${to}/${branch}...HEAD`]);
++      const [behind, ahead] = counts.code === 0 ? counts.stdout.trim().split(/\s+/).map(Number) : [null, null];
++      return { branch, remote: to, name: `${to}/${branch}`, ahead, behind, tracked: false };
++    }
++    const count = await git(["rev-list", "--count", "HEAD", "--not", `--remotes=${to}`]);
++    return { branch, remote: to, ahead: count.code === 0 ? Number(count.stdout.trim()) : null, tracked: false };
++  }
++
+   watch(root, cx) {
+     if (this.on || this.watched === root) return;
+     this.watched = root;
+@@ -580,6 +790,129 @@ export default class Changes extends View {
+       }
+     });
+   }
++
++  // push button: send HEAD to its upstream branch, or put the branch on its remote and track it.
++  // Never forced: a rejected push (the remote moved on since the last fetch) shows git's reason
++  // as a note. Busy meanwhile, like a commit; Herdr stops it after 30 s.
++  // Whether there is something to push where the panel is. The button's look follows this and
++  // not `loading`: refresh() sets that for 0.1 to 0.4 s every 10 s and on every file change, and
++  // the button blinked with it. canPush() adds that it can run right now.
++  pushReady() {
++    const p = this.pushTo;
++    return Boolean(
++      p?.remote &&
++      (p.ahead ?? 1) > 0 && // an unread count still lets a push try
++      this.root &&
++      this.contextKey() === this.context &&
++      this.mode === "sidebar",
++    );
++  }
++
++  canPush() {
++    return this.pushReady() && !this.loading && !this.busy;
++  }
++
++  pushHead(cx) {
++    if (!this.canPush()) return;
++    const p = this.pushTo;
++    const root = this.root;
++    const on = this.on;
++    const context = this.context;
++    const args = p.tracked ? ["push", p.remote, `HEAD:${p.ref}`] : ["push", "-u", p.remote, "HEAD"];
++    this.busy = true;
++    this.operation = "push";
++    this.note = null;
++    cx.notify();
++    cx.spawn(async (cx) => {
++      try {
++        const result = await this.git(args, root, on);
++        if (result.code !== 0)
++          throw Error(
++            (result.stderr || result.stdout || `git push exited with ${result.code}`)
++              .split("\n")
++              .map((line) => line.trim())
++              .filter((line) => line && !line.startsWith("hint:"))
++              .slice(-2)
++              .join(" "),
++          );
++        const at = Date.now();
++        this.reload = at;
++        setShared("better-changes.reload", { root, on: on ?? null, at });
++      } catch (error) {
++        if (context === this.contextKey()) this.note = `Push failed: ${error.message}`;
++      } finally {
++        this.busy = false;
++        this.operation = null;
++        this.refresh(cx);
++        cx.notify();
++      }
++    });
++  }
++
++  // push button: where a push goes, for the tooltip and the footer line.
++  pushLabel() {
++    const p = this.pushTo;
++    return p?.tracked ? p.name : p?.remote ? `${p.remote}/${p.branch}` : "";
++  }
++
++  // ai message: ask AI_COMMAND for a message from the staged diff and the repository's recent
++  // commits, and put it in the message box to edit and commit. Busy meanwhile, like a commit,
++  // so nothing stages or commits under it; a failure (no `claude`, a timeout) shows as a note.
++  suggestMessage(cx) {
++    if (
++      !this.root ||
++      this.loading ||
++      this.busy ||
++      this.contextKey() !== this.context ||
++      !this.stagedCount ||
++      this.conflicts ||
++      this.mode !== "sidebar"
++    )
++      return;
++    const root = this.root;
++    const on = this.on;
++    const context = this.context;
++    this.busy = true;
++    this.operation = "ai";
++    this.note = null;
++    cx.notify();
++    cx.spawn(async (cx) => {
++      try {
++        const [stat, diff, log, branch] = await Promise.all([
++          this.git(["diff", "--cached", "--no-color", "--stat=80"], root, on),
++          this.git(["diff", "--cached", "--no-color", "--no-ext-diff", "--no-textconv"], root, on),
++          this.git(["log", "--no-merges", "-n", String(AI_EXAMPLES), "--format=%B%x1e"], root, on),
++          this.git(["symbolic-ref", "-q", "--short", "HEAD"], root, on),
++        ]);
++        if (diff.code !== 0) throw Error((diff.stderr || "git diff failed").trim());
++        const prompt = aiPrompt({
++          stat: stat.stdout,
++          diff: diff.stdout,
++          examples: log.code === 0 ? log.stdout : "",
++          branch: branch.code === 0 ? branch.stdout.trim() : "",
++        });
++        const [program, ...args] = AI_COMMAND;
++        const result = await exec(program, [...args, prompt], { cwd: root, on });
++        if (result.code !== 0)
++          throw Error(
++            (result.stderr || result.stdout || `${program} exited with ${result.code}`).trim().split("\n").slice(-3).join(" "),
++          );
++        const message = aiMessage(result.stdout);
++        if (!message) throw Error(`${program} printed no message`);
++        if (context === this.contextKey()) {
++          this.message = message;
++          this.input.set_value(message);
++        }
++      } catch (error) {
++        if (context === this.contextKey()) this.note = `AI message failed: ${error.message}`;
++      } finally {
++        this.busy = false;
++        this.operation = null;
++        this.refresh(cx);
++        cx.notify();
++      }
++    });
++  }
+   // ── Shared controls and file rows ─────────────────────────────────────────
+ 
+   icon(id, asset, label, action, t, active = false, disabled = false, size = 24) {
+@@ -615,7 +948,7 @@ export default class Changes extends View {
+     const selected = this.currentSelection();
+     return h_flex()
+       .id(`change-${scope}-${file.path}`)
+-      .h(30)
++      .h(listRowHeight(30)) // changes font
+       .flex_none()
+       .pl(8 + depth * 14)
+       .pr(8)
+@@ -722,6 +1055,8 @@ export default class Changes extends View {
+ 
+   render() {
+     const t = theme();
++    const font = changesFont(); // changes font
++    const line = lineHeight();
+     const root = v_flex()
+       .size_full()
+       .min_h(0)
+@@ -731,17 +1066,76 @@ export default class Changes extends View {
+       .border_color(t.border)
+       .bg(t.background)
+       .text_color(t.foreground)
++      .when(Boolean(font), (el) => el.font_family(font))
++      .when(Boolean(line), (el) => el.line_height(line))
+       .text_size(em(1));
+     if (this.mode === "diff") return this.renderDiff(root, t);
+     root.child(this.renderSidebarHeader(t));
++    // panel folder: which pane's folder, or which folder, the three panels show.
++    const folders = this.source ? null : folderBar(t, "changes-folders");
++    if (folders) root.child(folders);
++    // wrapper repos
++    const wrapper = this.source ? null : this.wrapperSpot().wrapper;
++    if (wrapper) root.child(this.renderRepoBar(wrapper, t));
+     root.child(this.renderFileList(t));
+     if (this.error && this.files.length)
+       root.child(div().px(12).py(6).text_color(t.ansi1).child(this.error));
+     if (this.note) root.child(div().px(12).py(6).text_color(t.ansi1).child(this.note));
+-    root.child(this.renderCommitFooter(t));
++    root.child(this.renderCommitFooter(t, wrapper ? this.picked[pickKey(wrapper.cwd, wrapper.on)] : null));
+     return root;
+   }
+ 
++  // wrapper repos: one button per repo under the wrapper folder with its changed-file
++  // count, and the picked repo's branch on the right.
++  renderRepoBar(wrapper, t) {
++    const picked = this.picked[pickKey(wrapper.cwd, wrapper.on)];
++    return h_flex()
++      .h(36)
++      .px(8)
++      .gap(4)
++      .flex_none()
++      .items_center()
++      .border_b(1)
++      .border_color(t.border)
++      .children(
++        wrapper.choices.map((c) => {
++          const on = c.name === picked;
++          return h_flex()
++            .id(`changes-repo-${c.name}`)
++            .h(26)
++            .px(9)
++            .gap(6)
++            .flex_none()
++            .items_center()
++            .rounded(6)
++            .text_size(em(0.9))
++            .bg(on ? t.selected : t.background)
++            .text_color(on ? t.foreground : t.muted)
++            .when(on, (el) => el.font_semibold())
++            .cursor_pointer()
++            .hover((s) => s.bg(t.hover))
++            .tooltip(c.root)
++            .on_click((_e, cx) => this.pickRepo(wrapper, c.name, cx))
++            .child(c.name)
++            .when(c.count > 0, (el) =>
++              el.child(
++                div()
++                  .px(5)
++                  .rounded(4)
++                  .bg(t.raised)
++                  .text_size(em(0.75))
++                  .text_color(on ? t.foreground : t.dim)
++                  .child(String(c.count)),
++              ),
++            );
++        }),
++      )
++      .child(div().flex_1())
++      .when(Boolean(this.branch), (el) =>
++        el.child(div().min_w(0).truncate().text_size(em(0.8)).text_color(t.dim).child(this.branch)),
++      );
++  }
++
+   renderSidebarHeader(t) {
+     const head = h_flex()
+       .h(44)
+@@ -892,7 +1286,7 @@ export default class Changes extends View {
+     const chevron = this.closed.has(closedKey) ? "chevron-right" : "chevron-down";
+     return h_flex()
+       .id(`changes-folder-${scope}-${row.path}`)
+-      .h(28)
++      .h(listRowHeight(28)) // changes font
+       .pl(8 + row.depth * 14)
+       .gap(6)
+       .flex_none()
+@@ -910,12 +1304,119 @@ export default class Changes extends View {
+       .child(div().min_w(0).truncate().child(row.name));
+   }
+ 
+-  renderCommitFooter(t) {
++  // ai message: the sparkle beside the message box. Enabled when there is something staged
++  // to describe; a spinner while the model writes.
++  renderAiButton(t) {
++    const writing = this.operation === "ai";
++    // commit box: no `loading` here, so a background refresh doesn't blink it; a press then waits for it (whenLoaded).
++    const enabled = Boolean(this.root && !this.busy && this.stagedCount && !this.conflicts);
++    return div()
++      .id("changes-ai-message")
++      .tooltip(
++        writing
++          ? "Writing a commit message…"
++          : enabled
++            ? "Write a commit message with AI from the staged changes"
++            : "Stage changes first, then let AI write the message",
++      )
++      .h(28)
++      .px(8)
++      .flex_basis(0)
++      .flex_grow(BUTTON_WEIGHTS.message) // commit box
++      .min_w(0)
++      .flex()
++      .gap(5)
++      .items_center()
++      .justify_center()
++      .text_size(em(0.85))
++      .rounded(5)
++      .border_1()
++      .border_color(writing ? t.accent : t.border)
++      .bg(writing ? t.selected : t.raised)
++      .text_color(enabled || writing ? t.muted : t.dim)
++      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
++      .when(enabled, (el) =>
++        el
++          .cursor_pointer()
++          .hover((s) => s.bg(t.hover).text_color(t.foreground))
++          .on_click((_e, cx) => this.whenLoaded((cx) => this.suggestMessage(cx), cx)),
++      )
++      .child(
++        writing
++          ? svg("mods/workspace-chrome/spinner.svg").size(14).flex_none().text_color(t.accent).spin(900)
++          : svg("mods/better-changes/sparkle.svg").size(14).flex_none(),
++      )
++      .child(buttonLabel(writing ? "Writing…" : "Message"));
++  }
++
++  // push button: right of Commit, at the edge, with how many commits HEAD is ahead. Solid (the next step) when
++  // there is something to push and nothing to commit.
++  renderPushButton(t, commitEnabled) {
++    const p = this.pushTo;
++    const pushing = this.operation === "push";
++    const enabled = this.pushReady() && !this.busy;
++    const solid = enabled && !commitEnabled;
++    const plural = (n) => `${n} commit${n === 1 ? "" : "s"}`;
++    const lag = p?.behind ? ` (${p.name} has ${plural(p.behind)} you don't: pull first if it's rejected)` : "";
++    const tip = pushing
++      ? `Pushing to ${this.pushLabel()}…`
++      : !this.root
++        ? "Not a Git repository"
++        : !this.hasHead
++          ? "Nothing to push before the first commit"
++          : !p
++            ? "Check out a branch to push"
++            : p.local
++              ? `The upstream is the local branch ${p.local}: push from a terminal`
++              : !p.remote
++                ? "No remote to push to"
++                : !p.tracked
++                  ? p.ahead === 0
++                    ? `Nothing to push: ${p.name ?? p.remote} has every commit of ${p.branch} (as of the last fetch)`
++                    : `Push ${p.branch} to ${p.remote} and track it` +
++                      (p.ahead ? `: ${plural(p.ahead)} ${p.name ?? p.remote} doesn't have` : "") + lag
++                  : p.ahead
++                    ? `Push ${plural(p.ahead)} to ${p.name}` + lag
++                    : `Nothing to push: ${p.branch} is not ahead of ${p.name} (as of the last fetch)`;
++    return div()
++      .id("changes-push")
++      .tooltip(tip)
++      .h(28)
++      .px(8)
++      .flex_basis(0)
++      .flex_grow(BUTTON_WEIGHTS.push) // commit box
++      .min_w(0)
++      .flex()
++      .gap(5)
++      .items_center()
++      .justify_center()
++      .rounded(5)
++      .border_1()
++      .border_color(pushing ? t.accent : t.border)
++      .bg(solid ? t.solid : pushing ? t.selected : t.raised)
++      .text_color(solid ? t.solid_foreground : enabled || pushing ? t.foreground : t.dim)
++      .text_size(em(0.85))
++      .when(enabled, (el) =>
++        el
++          .cursor_pointer()
++          .when(!solid, (s) => s.hover((h) => h.bg(t.hover)))
++          .on_click((_e, cx) => this.whenLoaded((cx) => this.pushHead(cx), cx)),
++      )
++      .child(
++        pushing
++          ? svg("mods/workspace-chrome/spinner.svg").size(14).flex_none().text_color(t.accent).spin(900)
++          : svg("mods/better-changes/push.svg").size(14).flex_none(),
++      )
++      .child(buttonLabel(pushing ? "Pushing…" : p?.ahead ? `Push ↑${p.ahead}` : "Push"));
++  }
++
++  renderCommitFooter(t, repo = null) {
++    // commit box: no `loading` here, so a background refresh doesn't blink Commit (or Push's
++    // solid look, which turns on when Commit is off); a press then waits for it (whenLoaded).
+     const enabled = Boolean(
+       this.message.trim() &&
+       this.root &&
+       !this.busy &&
+-      !this.loading &&
+       this.stagedCount &&
+       !this.conflicts,
+     );
+@@ -925,53 +1426,65 @@ export default class Changes extends View {
+       .flex_none()
+       .border_t(1)
+       .border_color(t.border)
++      .child(
++        Textarea.new(this.input) // commit box
++          .id("changes-commit-message")
++          .w_full()
++          .px(8)
++          .py(6)
++          .rounded(5)
++          .border_1()
++          .border_color(t.border)
++          .bg(t.input)
++          .text_size(em(0.9)),
++      )
+       .child(
+         h_flex()
+           .gap(6)
+           .items_center()
+-          .child(
+-            Input.new(this.input)
+-              .id("changes-commit-message")
+-              .h(28)
+-              .flex_1()
+-              .min_w(0)
+-              .px(8)
+-              .rounded(5)
+-              .border_1()
+-              .border_color(t.border)
+-              .bg(t.input)
+-              .text_size(em(0.9)),
+-          )
++          .child(this.renderAiButton(t)) // ai message
++          // commit box: the buttons under the box fill the row by BUTTON_WEIGHTS (push button: Commit, then Push)
+           .child(
+             div()
+               .id("changes-commit")
+               .tooltip("Commit staged changes only")
+               .h(28)
+               .px(8)
++              .flex_basis(0)
++              .flex_grow(BUTTON_WEIGHTS.commit)
++              .min_w(0)
+               .flex()
+               .gap(5)
+               .items_center()
++              .justify_center()
+               .rounded(5)
+               .border_1()
+               .border_color(t.border)
+               .bg(enabled ? t.solid : t.raised)
+               .text_color(enabled ? t.solid_foreground : t.dim)
+               .text_size(em(0.85))
+-              .when(enabled, (el) => el.cursor_pointer().on_click((_e, cx) => this.commit(cx)))
+-              .child(svg("mods/better-changes/commit.svg").size(14))
+-              .child(this.operation === "commit" ? "Committing…" : "Commit staged"),
+-          ),
++              .when(enabled, (el) => el.cursor_pointer().on_click((_e, cx) => this.whenLoaded((cx) => this.commit(cx), cx)))
++              .child(svg("mods/better-changes/commit.svg").size(14).flex_none())
++              .child(buttonLabel(this.operation === "commit" ? "Committing…" : "Commit staged")),
++          )
++          .child(this.renderPushButton(t, enabled)), // push button
+       )
+       .child(
+         div()
+           .text_size(em(0.8))
+           .text_color(t.dim)
+           .child(
+-            this.total > MAX_FILES
+-              ? "First 1,000 files shown"
+-              : this.conflicts
+-                ? "Resolve conflicts and stage the files before committing"
+-                : "Commit includes staged changes only",
++            this.operation === "ai"
++              ? "Writing a commit message from the staged changes…" // ai message
++              : this.operation === "push"
++                ? `Pushing to ${this.pushLabel()}…` // push button
++                : this.total > MAX_FILES
++                ? "First 1,000 files shown"
++                : this.conflicts
++                  ? "Resolve conflicts and stage the files before committing"
++                  : repo
++                    ? `Commit includes staged changes in ${repo} only` // wrapper repos
++                    : "Commit includes staged changes only",
+           ),
+       );
+   }
+@@ -1061,7 +1574,7 @@ export default class Changes extends View {
+       root.child(
+         div().p(14).text_color(t.dim).child("Select a changed file in Changes to view its diff."),
+       );
+-    const height = Math.ceil(em(1.65));
++    const height = diffLineHeight(); // changes font
+     const split = this.diffLayout === "split";
+     if (split)
+       root.child(
+@@ -1117,11 +1630,12 @@ export default class Changes extends View {
+     }
+     const rows = split ? this.pairedRows : this.rows;
+     const listId = `factory-diff-${this.context}-${this.path}-${this.scope}-${this.diffLayout}`;
++    const font = changesFont() ?? codeFont(); // changes font
+     const viewport = div()
+       .flex_1()
+       .min_h(0)
+       .relative()
+-      .when(Boolean(codeFont()), (el) => el.font_family(codeFont()))
++      .when(Boolean(font), (el) => el.font_family(font))
+       .text_size(em(1));
+     if (split)
+       viewport.child(
+diff --git a/mod.json b/mod.json
+index c29d7a3..10499d8 100644
+--- a/mod.json
++++ b/mod.json
+@@ -1,5 +1,5 @@
+ {
+-  "place": "right",
++  "place": "none",
+   "size": 368,
+   "title": "Better Changes"
+ }
+diff --git a/model.js b/model.js
+index 05eda0e..fd354f8 100644
+--- a/model.js
++++ b/model.js
+@@ -153,3 +153,59 @@ export function splitDiffRows(rows) {
+   flushReplacement();
+   return paired;
+ }
++
++// ai message: the prompt AI_COMMAND (main.js) answers with a commit message. The recent
++// commit messages carry the repository's language, prefix style and whether bodies are
++// written; the diff is cut at a size the model answers quickly from, well under Herdr's
++// 30 s limit on a command.
++export const AI_DIFF_LIMIT = 40000;
++const AI_EXAMPLE_LIMIT = 600;
++
++export function aiPrompt({ stat, diff, examples, branch }) {
++  const cut = diff.length > AI_DIFF_LIMIT;
++  // `git log --format=%B%x1e`: one record per commit, subject and body.
++  const recent = examples
++    .split("\x1e")
++    .map((m) => m.trim())
++    .filter(Boolean)
++    .map((m) => (m.length > AI_EXAMPLE_LIMIT ? m.slice(0, AI_EXAMPLE_LIMIT) + "…" : m));
++  return [
++    "Write a git commit message for the staged changes below.",
++    "Rules:",
++    "- Reply with the commit message only: no quotes, no code fence, no explanation.",
++    "- First a subject line of at most 72 characters, imperative mood, no trailing period.",
++    recent.length
++      ? "- Follow the form of these recent commits from this repository exactly: the same kind of prefix (the same type words, untranslated, and a scope in parentheses when they have one), a summary in their language, tone and grammatical form, and a body after one blank line only when they write bodies, in the same shape:\n" +
++        recent.map((m) => m.split("\n").map((l) => `  ${l}`).join("\n")).join("\n  ---\n")
++      : "- Use the Conventional Commits form, type(scope): summary, in English, with a short body after one blank line only when the change needs explaining.",
++    "- Say what the change does and why, not which files changed. Wrap body lines at 72 characters.",
++    branch ? `Branch: ${branch}` : null,
++    "Changed files:",
++    stat.trim() || "(none)",
++    cut ? `Staged diff (first ${AI_DIFF_LIMIT} characters):` : "Staged diff:",
++    diff.slice(0, AI_DIFF_LIMIT),
++  ]
++    .filter((line) => line !== null)
++    .join("\n");
++}
++
++// The model's answer as a commit message: code fences and a "Subject:" label dropped, quotes
++// around the subject removed, runs of blank lines folded to one.
++export function aiMessage(text) {
++  const lines = String(text ?? "")
++    .replace(/\r/g, "")
++    .split("\n")
++    .map((l) => l.trimEnd())
++    .filter((l) => !l.trim().startsWith("```"));
++  while (lines.length && !lines[0].trim()) lines.shift();
++  if (lines.length)
++    lines[0] = lines[0]
++      .trim()
++      .replace(/^(subject|commit message)\s*:\s*/i, "")
++      .replace(/^["'`]+|["'`]+$/g, "")
++      .trim();
++  return lines
++    .join("\n")
++    .replace(/\n{3,}/g, "\n\n")
++    .trim();
++}
+diff --git b/push.svg b/push.svg
+new file mode 100644
+index 0000000..dffd2c6
+--- /dev/null
++++ b/push.svg
+@@ -0,0 +1 @@
++<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M5 20h14"/></svg>
+diff --git b/sparkle.svg b/sparkle.svg
+new file mode 100644
+index 0000000..32435e5
+--- /dev/null
++++ b/sparkle.svg
+@@ -0,0 +1 @@
++<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4l1.6 4.4L16 10l-4.4 1.6L10 16l-1.6-4.4L4 10l4.4-1.6z"/><path d="M18 14l.9 2.1 2.1.9-2.1.9L18 20l-.9-2.1-2.1-.9 2.1-.9z"/></svg>
+diff --git a/typography.js b/typography.js
+index 4066bed..903f584 100644
+--- a/typography.js
++++ b/typography.js
+@@ -1,7 +1,31 @@
+ // Herdr's mod API accepts px/rem, so resolve em-like multipliers from its live font settings.
+-import { settings } from "herdr";
++import { settings, fonts, shared, setShared } from "herdr";
++
++// changes font: the look the layout's Changes block sets in its props (`font`, `font_size`,
++// `line_height`). The sidebar publishes it here; diff tabs open with other props.
++const LOOK = "better-changes.font";
++
++/** @param {Record<string, unknown> | null | undefined} p */
++export function publishLook(p) {
++  const look = { family: p?.font ?? null, size: p?.font_size ?? null, line: p?.line_height ?? null };
++  if (JSON.stringify(shared(LOOK) ?? null) !== JSON.stringify(look)) setShared(LOOK, look);
++}
++
++/** @returns {{ family?: unknown, size?: unknown, line?: unknown }} */
++function look() {
++  const value = shared(LOOK);
++  return value && typeof value === "object" ? value : {};
++}
++
++/** @param {unknown} value */
++function positive(value) {
++  const n = Number(value);
++  return Number.isFinite(n) && n > 0 ? n : null;
++}
+ 
+ export function em(multiplier = 1) {
++  const own = positive(look().size); // changes font
++  if (own) return own * multiplier;
+   const config = settings();
+   const base = Number(config.ui_font_size ?? config.font_size);
+   return (Number.isFinite(base) && base > 0 ? base : 14) * multiplier;
+@@ -11,3 +35,35 @@ export function codeFont() {
+   const config = settings();
+   return config.font_family ?? config.font ?? config.ui_font_family ?? config.ui_font;
+ }
++
++// The layout's font when this machine has it; null keeps Herdr's fonts. fonts() is empty
++// where no fonts are loaded (`herdr-app check`), so the name is used as given there.
++const installed = new Map();
++export function changesFont() {
++  const name = look().family;
++  if (typeof name !== "string" || !name.trim()) return null;
++  if (!installed.has(name)) {
++    const list = fonts();
++    if (!list.length) return name;
++    installed.set(name, list.includes(name));
++  }
++  return installed.get(name) ? name : null;
++}
++
++// The layout's line height, a multiple of the text size; null keeps the upstream spacing.
++export function lineHeight() {
++  return positive(look().line);
++}
++
++// A diff line, in px.
++export function diffLineHeight() {
++  return Math.ceil(em(lineHeight() ?? 1.65));
++}
++
++// A file or folder row, in px: a line and 2px above and below it, never under the 20px
++// stage button; `fallback` (upstream's fixed height) without a line height.
++/** @param {number} fallback */
++export function listRowHeight(fallback) {
++  const line = lineHeight();
++  return line ? Math.max(22, Math.ceil(em(line)) + 4) : fallback;
++}

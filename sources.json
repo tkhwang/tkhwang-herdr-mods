@@ -1,0 +1,140 @@
+{
+  "mods": {
+    "spaces-dev": {
+      "kind": "herdr",
+      "upstream": {
+        "repo": "herdrdev/herdr-app",
+        "ref": "v0.1.11",
+        "commit": "e12fd31866f33cb613922d0b33ea506e6f23ce3c",
+        "path": "defaults/mods/spaces"
+      },
+      "license": "herdr",
+      "shared": ["ports.js"]
+    },
+    "agents-dev": {
+      "kind": "herdr",
+      "upstream": {
+        "repo": "herdrdev/herdr-app",
+        "ref": "v0.1.11",
+        "commit": "e12fd31866f33cb613922d0b33ea506e6f23ce3c",
+        "path": "defaults/mods/agents"
+      },
+      "license": "herdr"
+    },
+    "changes-dev": {
+      "kind": "herdr",
+      "upstream": {
+        "repo": "herdrdev/herdr-app",
+        "ref": "v0.1.11",
+        "commit": "e12fd31866f33cb613922d0b33ea506e6f23ce3c",
+        "path": "defaults/mods/changes"
+      },
+      "license": "herdr"
+    },
+    "files-dev": {
+      "kind": "herdr",
+      "upstream": {
+        "repo": "herdrdev/herdr-app",
+        "ref": "v0.1.13",
+        "commit": "93b097f6e29fcb2d90a30dea2f03ce4e5dee7981",
+        "path": "defaults/mods/files"
+      },
+      "license": "herdr",
+      "shared": ["markdown.js", "panel-folder.js"]
+    },
+    "tabs-dev": {
+      "kind": "herdr",
+      "upstream": {
+        "repo": "herdrdev/herdr-app",
+        "ref": "v0.1.11",
+        "commit": "e12fd31866f33cb613922d0b33ea506e6f23ce3c",
+        "path": "defaults/mods/tabs"
+      },
+      "license": "herdr",
+      "shared": ["markdown.js"]
+    },
+    "better-spaces": {
+      "kind": "oss",
+      "upstream": {
+        "repo": "munza/herdr-mods",
+        "commit": "77d94f77a70437975b785e9b6514a95e1de7cee9",
+        "path": "better-spaces/mods/better-spaces"
+      },
+      "license": "herdr-mods",
+      "extras": [
+        {
+          "file": "navigation.js",
+          "repo": "filipores/herdr-spaces-status",
+          "commit": "4881e688b8d9256977a37de303f7b095c515aea0",
+          "path": "mods/spaces-glow/navigation.js",
+          "license": "herdr-spaces-status"
+        }
+      ],
+      "shared": ["ports.js"]
+    },
+    "better-changes": {
+      "kind": "oss",
+      "upstream": {
+        "repo": "munza/herdr-mods",
+        "commit": "77d94f77a70437975b785e9b6514a95e1de7cee9",
+        "path": "better-changes/mods/better-changes"
+      },
+      "license": "herdr-mods",
+      "shared": ["markdown.js", "panel-folder.js"]
+    },
+    "git-graph": {
+      "kind": "oss",
+      "upstream": {
+        "repo": "rabeeh-ta/herdr-git-graph",
+        "ref": "v0.3.1",
+        "commit": "4a9cd1ef79915234a56ba0031945b0b82973585c",
+        "path": "mods/git-graph"
+      },
+      "license": "herdr-git-graph",
+      "shared": ["panel-folder.js"]
+    },
+    "markdown-browser": {
+      "kind": "oss",
+      "upstream": {
+        "repo": "ohneda/herdr-markdown-browser",
+        "commit": "bb1f3c76882266837662b2f253a241c3ee94463a",
+        "path": "mods/markdown-browser"
+      },
+      "license": "herdr-markdown-browser"
+    },
+    "herdr-open-with-zed": {
+      "kind": "oss",
+      "upstream": {
+        "repo": "atleugim/herdr-open-with-zed",
+        "commit": "a15570eabe03597282252b055efc35cf9c5ce838",
+        "path": "mods/herdr-open-with-zed"
+      },
+      "license": "herdr-open-with-zed"
+    },
+    "copy-on-select": {
+      "kind": "fetch",
+      "upstream": {
+        "repo": "jspoynor/herdr-copy-on-select",
+        "commit": "ea2304a28e3bda6812048ee556c592a558320aa2",
+        "path": "mods/copy-on-select",
+        "files": ["main.js", "mod.json"]
+      },
+      "license": null
+    }
+  },
+  "themes": [
+    {
+      "repo": "MarcozVD/herdr-layout-catppuccin",
+      "commit": "b58f43478fbf874c8be989b3336793f7c98b6d10",
+      "path": "themes/herdr-catppuccin.json",
+      "sha256": "946e2d08b250cf4cb8bd603a838f441fe848535f9d62ee88c84a5f508ad0bbf1"
+    },
+    {
+      "repo": "MarcozVD/herdr-layout-catppuccin",
+      "commit": "b58f43478fbf874c8be989b3336793f7c98b6d10",
+      "path": "themes/herdr-catppuccin-latte.json",
+      "sha256": "d9f8ce130ad4bf8241e898449f9447c6c4f32290863ff5c5ed5b5ab5850f79f4"
+    }
+  ],
+  "config": ["layouts/tkhwang-herdr.json", "settings.json", "keys.json"]
+}

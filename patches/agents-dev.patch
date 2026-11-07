@@ -1,0 +1,422 @@
+diff --git a/main.js b/main.js
+index 4ec2d54..94e5b25 100644
+--- a/main.js
++++ b/main.js
+@@ -14,6 +14,25 @@ function find(node, id) {
+   return null;
+ }
+ 
++// sidebar size: the layout block's `font_size` (px for the 13 the list's text was drawn at;
++// every text size scales with it) and `row_scale` (every row height times it; 1 keeps the
++// shipped sizes). The sort menu, an overlay with its own props, keeps the shipped sizes.
++/** @param {string} key */
++const own = (key) => {
++  const n = Number(props()?.[key]);
++  return Number.isFinite(n) && n > 0 ? n : null;
++};
++/** @param {number} px */
++const fs = (px) => {
++  const size = own("font_size");
++  return size ? (px * size) / 13 : px;
++};
++/** @param {number} px */
++const rowPx = (px) => {
++  const scale = own("row_scale");
++  return scale ? Math.round(px * scale) : px;
++};
++
+ // The sidebar's rail goes by its width, not a flag: dragging its edge narrows it too.
+ const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
+ 
+@@ -50,7 +69,8 @@ const SORTS = [
+   { id: "priority", label: "Priority", icon: "clock" },
+   { id: "grouped", label: "Grouped by space", icon: "layers" },
+ ];
+-const sortOf = () => SORTS.find((s) => s.id === shared("agents.sort")) ?? SORTS[0];
++// space headers: until a sort is picked (a fresh install), group by space so the headers show.
++const sortOf = () => SORTS.find((s) => s.id === shared("agents.sort")) ?? SORTS[1];
+ const SECTION = { 4: "Needs you", 3: "Done", 2: "Working", 1: "Idle" };
+ const SECTION_STATUS = { 4: "blocked", 3: "done", 2: "working" };
+ 
+@@ -68,6 +88,62 @@ function icon(p, size, color) {
+   return p.tint ? svg(p.icon).size(size).flex_none().text_color(color) : image(p.icon).w(size).h(size).flex_none();
+ }
+ 
++// status glow: the same row treatment as the Spaces list (better-spaces, from
++// filipores/herdr-spaces-status): done green, blocked orange, each with a faint fill
++// and layered outlines; working a thin foreground contour that breathes, yellow (the tab
++// bar's agent color) and stronger when the agent is in the tab open on the right. Idle:
++// nothing. Blocked is a deeper orange than the original amber, which read as that yellow.
++const WORKING = "#facc15";
++const GLOW = { done: "#22c55e", blocked: "#f97316" };
++
++function glow(status) {
++  const color = GLOW[status];
++  if (!color) return [];
++  return [
++    div().absolute().inset(0).rounded(8).bg(`${color}18`),
++    ...["70", "38", "20", "10"].map((alpha, i) =>
++      div().absolute().inset(-i).rounded(8 + i).border(1).border_color(`${color}${alpha}`)),
++  ];
++}
++
++function workPulse(id, t, open) {
++  const [from, to, period] = open ? [0.45, 1, 1800] : [0.1, 0.24, 3200];
++  return div().id(`ag-pulse-${id}${open ? "-open" : ""}`).absolute().inset(0)
++    .loop("opacity", { from, to, period, easing: "ease-in-out" })
++    .children([1, 0.38, 0.16, 0.06].map((opacity, i) =>
++      div().absolute().inset(-i).rounded(8 + i).border(1).border_color(open ? WORKING : t.foreground).opacity(opacity)));
++}
++
++// open: the agent is in the tab shown on the right (here is focused()).
++const statusGlow = (a, t, here) => [
++  ...(a.status === "working" ? [workPulse(a.address, t, a.space === here?.space && a.tab === here?.tab)] : []),
++  ...glow(a.status),
++];
++
++// space initials: a space's avatar shows the first letters of its name's first and last words
++// (tkhwang-herdr-mods TM, feature-cpq-task-a FA), one letter for a one-word name: a single
++// letter came out the same for most spaces of one project or owner. Kept in step with
++// better-spaces' copy.
++function initials(name) {
++  const words = (name ?? "")
++    .replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2")
++    .split(/[^\p{L}\p{N}]+/u)
++    .filter(Boolean);
++  if (!words.length) return "?";
++  return ([...words[0]][0] + (words.length > 1 ? [...words.at(-1)][0] : "")).toUpperCase();
++}
++
++// current highlight: as in the Spaces list, the focused agent's row is cyan, a tint and
++// a bar on the left, so it reads apart from the status outlines and the green space colors.
++const CURRENT = "#22d3ee";
++const currentBar = () => div().absolute().left(0).top(6).bottom(6).w(3).rounded(2).bg(CURRENT);
++
++// nested rows: under a space header an agent's row steps in by the header's avatar and
++// gap (16 + 6), as the Spaces list nests a worktree under its repo (pl 22), so the space
++// reads as the heading and its agents as the items under it. Pinned and priority rows,
++// which name their space themselves, stay at the edge; a row's sub-terminals step in too.
++const NEST = 22;
++
+ export default class Agents extends View {
+   init(_props, cx) {
+     if (props()?.sortMenu) return;
+@@ -170,25 +246,25 @@ export default class Agents extends View {
+     });
+   }
+ 
+-  subRow(t, s, shown, compact) {
++  subRow(t, s, shown, compact, nested = false) {
+     const k = s.t;
+     const st = kidStatus(k, this.listed);
+     const pic = icon(k.program, 14, t.foreground);
+     const on = k.address === shown;
+     return h_flex()
+       .id(`sub-${k.address}`)
+-      .pl(39)
++      .pl(nested ? 39 + NEST : 39) // nested rows
+       .pr(8)
+       .rounded(8)
+-      .h(26)
++      .h(rowPx(26)) // sidebar size
+       .flex_none()
+       .gap(0)
+       .items_center()
+-      .text_size(12.5)
++      .text_size(fs(12.5))
+       .when(on, (el) => el.bg(t.raised))
+       .hover((s) => s.bg(t.hover))
+       .on_click(() => this.peek(k.address))
+-      .children(s.lines.map(l => div().self_start().mt(-4).w(9).h(17).mr(4).flex_none()
++      .children(s.lines.map(l => div().self_start().mt(-4).w(9).h(Math.round(rowPx(26) / 2) + 4).mr(4).flex_none()
+         .when(Boolean(l), el => el.border_l(1.5).border_color(t.input))
+         .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(6))))
+       .when(Boolean(pic), el => el.child(div().mr(8).child(pic)))
+@@ -200,8 +276,8 @@ export default class Agents extends View {
+   status(t, a, compact = false) {
+     const color = t[a.status] ?? t.dim;
+     if (a.status === "working") return svg("mods/workspace-chrome/spinner.svg").size(12).mx(1).flex_none().text_color(t.working).spin(900);
+-    if (a.status === "blocked" && compact) return div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
+-    if (a.status === "blocked") return div().flex_none().px(6).h(18).rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you");
++    if (a.status === "blocked" && compact) return div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(fs(10.5)).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
++    if (a.status === "blocked") return div().flex_none().px(6).h(18).rounded(5).bg(t.blocked + "26").text_size(fs(10.5)).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you");
+     // Idle: a ring; done: a dot.
+     if (a.status === "idle") return div().size(7).mx(3).flex_none().rounded(4).border(1.5).border_color(t.idle ?? t.dim);
+     return div().size(7).mx(3).flex_none().rounded(4).bg(a.status === "done" ? color : t.dim + "00");
+@@ -215,7 +291,8 @@ export default class Agents extends View {
+     let list = agents();
+     this.listed = new Map(list.map((a) => [a.address, a.status]));
+     const all = terminals();
+-    const shown = focused()?.agent;
++    const here = focused(); // status glow
++    const shown = here?.agent;
+     const now = Date.now();
+     this.track(list, now);
+     this.hold(list);
+@@ -233,7 +310,8 @@ export default class Agents extends View {
+       const subs = collapsed ? [] : this.tree(all, a.address);
+       const r = row(a, i, subs);
+       if (this.folded.has(a.address)) return [r];
+-      return [r, ...subs.map((s) => this.subRow(t, s, shown, byPriority))];
++      const nested = !byPriority && !this.pins.includes(a.address); // nested rows
++      return [r, ...subs.map((s) => this.subRow(t, s, shown, byPriority, nested))];
+     };
+ 
+     // The fold chevron; folded, the count too, colored by the most urgent one.
+@@ -249,7 +327,7 @@ export default class Agents extends View {
+         .flex()
+         .items_center()
+         .rounded(4)
+-        .text_size(11)
++        .text_size(fs(11))
+         .text_color(open ? t.dim : (t[top] ?? t.dim))
+         .cursor_pointer()
+         .hover((s) => s.bg(t.hover).text_color(t.foreground))
+@@ -277,6 +355,31 @@ export default class Agents extends View {
+       if (detail.get(a.address) == null && seen[`${a.space_name}\u0000`] > 1) detail.set(a.address, label(a));
+     }
+ 
++    // A space's avatar color, as the Spaces list stores it (used by space headers).
++    const MARK = { ansi6: "#22a99a", ansi3: "#e3814f", ansi4: "#5b8def", ansi5: "#8b7cf6", ansi2: "#3fae6a", ansi1: "#d9649a" };
++    const spaceColors = shared("space.colors") ?? {};
++    const spaceFill = (id) => {
++      const c = spaceColors[id] ?? "ansi6";
++      return c.startsWith("#") ? c : (MARK[c] ?? t[c]);
++    };
++
++    // wrapper repos: a workbranch task space (better-spaces publishes them as shared
++    // "better-spaces.wrappers") goes by the name the Spaces list gives it (its repo when it has
++    // one, its task folder when it has several), unless the person named the space. In a task
++    // of several repos an agent's row names the repo its folder is in; at the task's own
++    // folder it says nothing more.
++    const wrappers = shared("better-spaces.wrappers") ?? {};
++    const allSpaces = spaces();
++    const allPanes = panes();
++    const spaceName = (id, name) =>
++      wrappers[id] && !allSpaces.find((s) => s.id === id)?.named ? wrappers[id].name : name;
++    const repoOf = (a) => {
++      const wr = wrappers[a.space];
++      if (!wr || wr.repos.length < 2) return null;
++      const cwd = allPanes.find((p) => p.pane === a.pane)?.cwd ?? "";
++      return wr.repos.find((r) => cwd === `${wr.root}/${r.name}` || cwd.startsWith(`${wr.root}/${r.name}/`))?.name ?? null;
++    };
++
+     const row = (a, i, subs = []) => {
+       const pic = icon(a.program, 16, t.foreground);
+       const more = detail.get(a.address);
+@@ -285,13 +388,17 @@ export default class Agents extends View {
+       if (collapsed) {
+         return h_flex()
+           .id(`ag-${a.address}`)
+-          .h(26)
++          .relative() // status glow
++          .rounded(8) // status glow
++          .h(rowPx(26)) // sidebar size
+           .px(8)
+           .flex_none()
+           .items_center()
+           .gap(4)
++          .when(a.focused, (el) => el.bg(`${CURRENT}33`).child(currentBar())) // current highlight
+           .hover((s) => s.bg(t.hover))
+           .on_click(() => run("pane.focus", { pane: a.pane }))
++          .children(statusGlow(a, t, here)) // status glow
+           .child(div().flex_1().min_w(0).whitespace_nowrap().text_right().text_color(t.muted).child(String(i + 1)))
+           .child(h_flex().w(14).flex_none().items_center().justify_center().child(this.status(t, a, true)));
+       }
+@@ -318,16 +425,19 @@ export default class Agents extends View {
+       // Under a space header the space goes without saying; an automatic tab number says nothing.
+       // Without a space header above (priority, pinned) the row names its space.
+       const full = byPriority || isPinned;
+-      const name = full ? a.space_name || label(a) : more ?? (/^\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a));
++      const name = full ? spaceName(a.space, a.space_name) || label(a) : more ?? (/^\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a)); // wrapper repos
++      const repo = repoOf(a); // wrapper repos
+       return h_flex()
+         .id(`ag-${a.address}`)
+-        .px(8)
+-        .h(30)
++        .relative() // status glow
++        .pl(full ? 8 : 8 + NEST) // nested rows
++        .pr(8)
++        .h(rowPx(30)) // sidebar size
+         .flex_none()
+         .rounded(8)
+         .items_center()
+         .gap(9)
+-        .when(a.focused, (el) => el.bg(t.selected))
++        .when(a.focused, (el) => el.bg(`${CURRENT}33`).child(currentBar())) // current highlight
+         .cursor_pointer()
+         .hover((s) => s.bg(t.hover))
+         .on_hover((on, cx) => {
+@@ -336,6 +446,7 @@ export default class Agents extends View {
+           cx.notify();
+         })
+         .on_click(() => run("pane.focus", { pane: a.pane }))
++        .children(statusGlow(a, t, here)) // status glow
+         .when(Boolean(pic), el => el.child(div().id(`agent-fold-${a.address}`)
+           .when(subs.length > 0, el => el.on_click((_e, cx) => {
+             cx.stop_propagation();
+@@ -343,12 +454,14 @@ export default class Agents extends View {
+             cx.notify();
+           })).child(pic)))
+         .child(h_flex().flex_1().min_w(0).gap(5).items_center()
+-          .child(div().min_w(0).max_w(full && more ? 120 : 200).truncate().text_color(idle ? t.muted : t.foreground).child(name))
++          .child(div().min_w(0).max_w(full && more ? 120 : 200).truncate().text_color(idle ? t.muted : t.foreground)
++            .when(a.focused, (el) => el.font_semibold()).child(name)) // current highlight
+           .when(full && Boolean(more), el => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`\u00b7 ${more}`))))
+-        .when(Boolean(machine), el => el.child(div().text_size(10).text_color(t.dim).child(machine)))
++        .when(Boolean(repo), el => el.child(div().flex_none().text_size(fs(10.5)).text_color(t.dim).tooltip(`In ${repo}/`).child(repo))) // wrapper repos
++        .when(Boolean(machine), el => el.child(div().text_size(fs(10)).text_color(t.dim).child(machine)))
+         .when(subs.length > 0, el => el.child(fold(a, subs)))
+         .when(this.hovered === a.address, el => el.child(pin))
+-        .when(this.hovered !== a.address && Boolean(when), el => el.child(div().flex_none().text_size(11).text_color(t.dim).child(duration(now - when))))
++        .when(this.hovered !== a.address && Boolean(when), el => el.child(div().flex_none().text_size(fs(11)).text_color(t.dim).child(duration(now - when))))
+         .child(this.status(t, a, byPriority && !isPinned));
+     };
+ 
+@@ -369,12 +482,12 @@ export default class Agents extends View {
+       return h_flex()
+         .id(g.id)
+         .px(8)
+-        .pt(8)
+-        .h(30)
++        .pt(rowPx(8)) // sidebar size
++        .h(rowPx(30))
+         .flex_none()
+         .gap(6)
+         .items_center()
+-        .text_size(11)
++        .text_size(fs(11))
+         .font_medium()
+         .cursor_pointer()
+         .hover((s) => s.text_color(t.foreground))
+@@ -389,9 +502,59 @@ export default class Agents extends View {
+           .when(!byPriority && top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
+           .child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim)));
+     };
++    // space headers: in "Grouped by space" a space reads as a heading, not a dim label.
++    // A line above every group but the first, the space's colored letter as the Spaces list
++    // draws it and the name in bold. No git state (ahead, behind, PRs): the Spaces list shows
++    // that, the Agents list who works where.
++    // MARK and spaceFill (above the rows) are copied from spaces' main.js (keep them in step).
++    const spaceHeader = (g, first) => {
++      const open = !this.folded.has(g.id);
++      const top = g.members.reduce((m, a) => ((RANK[a.status] ?? 0) > (RANK[m] ?? 0) ? a.status : m), null);
++      const space = g.id.slice(3);
++      // wrapper repos: a task's name and letter as the Spaces list draws them, the project and
++      // task folder in the tooltip. A task of one repo is named after the repo, so its branch,
++      // which says which task, goes on a line under the name.
++      const wr = wrappers[space];
++      const label = spaceName(space, g.label);
++      const single = wr?.repos.length === 1 ? wr.repos[0] : null;
++      const branch = single?.branch ? (single.branch === "(detached)" ? "detached" : single.branch) : null; // none: not read yet
++      const letter = initials(label); // space initials
++      const name = div().min_w(0).truncate().text_size(fs(12.5)).font_semibold().text_color(t.foreground)
++        .when(Boolean(wr), (el) => el.tooltip(`${label === wr.name ? "" : `${label}\n`}${wr.project} / ${wr.task}\n${wr.root}`))
++        .child(label);
++      return h_flex()
++        .id(g.id)
++        .px(8)
++        .when(!first, (el) => el.mt(rowPx(6)).border_t(1).border_color(t.border))
++        .pt(rowPx(first ? 6 : 10)) // sidebar size
++        .h(rowPx((first ? 30 : 36) + (branch ? 15 : 0))) // wrapper repos, sidebar size
++        .flex_none()
++        .gap(6)
++        .items_center()
++        .cursor_pointer()
++        .on_click((_e, cx) => {
++          open ? this.folded.add(g.id) : this.folded.delete(g.id);
++          cx.notify();
++        })
++        .child(h_flex().size(16).flex_none().rounded(4).bg(spaceFill(space)).items_center().justify_center()
++          .text_size(fs(letter.length > 1 ? 8 : 9.5)).font_bold().text_color("#ffffff").child(letter)) // space initials
++        .child(branch // wrapper repos
++          ? v_flex().min_w(0).gap(1).child(name).child(h_flex().min_w(0).gap(4).items_center()
++            .child(svg("mods/workspace-chrome/git-branch.svg").size(11).flex_none().text_color(t.dim))
++            .child(div().min_w(0).truncate().text_size(fs(11)).text_color(t.dim).child(branch)))
++          : name)
++        .when(!open, (el) => el.child(div().flex_none().text_size(fs(11)).text_color(t.dim).child(String(g.members.length))))
++        .child(div().flex_1())
++        .when(!open, (el) => el
++          .when(top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
++          .child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim)));
++    };
+     const rows = collapsed
+       ? list.flatMap(withKids)
+-      : groups.flatMap((g) => [header(g), ...(this.folded.has(g.id) ? [] : g.members.flatMap(withKids))]);
++      : groups.flatMap((g, i) => [
++          g.id.startsWith("sp-") ? spaceHeader(g, i === 0) : header(g),
++          ...(this.folded.has(g.id) ? [] : g.members.flatMap(withKids)),
++        ]);
+ 
+     return v_flex()
+       .size_full()
+@@ -399,44 +562,44 @@ export default class Agents extends View {
+       .bg(t.chrome)
+       .border_t(1)
+       .border_color(t.border)
+-      .text_size(13)
++      .text_size(fs(13)) // sidebar size
+       .when(!collapsed, (el) =>
+         el.child(
+           h_flex()
+             .px(16)
+-            .h(41)
+-            .pt(14)
+-            .pb(5)
++            .h(rowPx(41)) // sidebar size
++            .pt(rowPx(14))
++            .pb(rowPx(5))
+             .flex_none()
+             .items_center()
+             .justify_between()
+-            .child(div().text_size(11.5).font_medium().text_color(t.dim).child("Agents"))
++            .child(div().text_size(fs(11.5)).font_medium().text_color(t.dim).child("Agents"))
+             .child(
+               div()
+                 .id("ag-sort")
+-                .text_size(11)
++                .text_size(fs(11))
+                 .text_color(t.dim)
+                 .hover((s) => s.text_color(t.foreground))
+-                .on_click(() => openOverlay({ mod: "agents", kind: "popup", width: 200, height: 140, props: { sortMenu: true } }))
++                .on_click(() => openOverlay({ mod: "agents-dev", kind: "popup", width: 200, height: 140, props: { sortMenu: true } }))
+                 .tooltip(`Sort agents: ${sort.label}`)
+                 .child(svg(`mods/workspace-chrome/${sort.icon}.svg`).size(14)),
+             ),
+         ),
+       )
+       .when(list.length === 0 && !collapsed, (el) =>
+-        el.child(div().px(12).text_size(12).text_color(t.dim).child("No agent status yet. Agents show up here when they report their status. Older versions and agents inside tmux may not.")),
++        el.child(div().px(12).text_size(fs(12)).text_color(t.dim).child("No agent status yet. Agents show up here when they report their status. Older versions and agents inside tmux may not.")),
+       )
+       .child(v_flex().id("ag-list").flex_1().min_h(0).px(collapsed ? 0 : 8).overflow_y_scrollbar().mode("always").children(rows))
+       .when(collapsed, (el) =>
+         el.child(
+           h_flex()
+-            .h(28)
++            .h(rowPx(28)) // sidebar size
+             .items_center()
+             .justify_center()
+             .child(
+               div()
+                 .id("collapse")
+-                .text_size(13)
++                .text_size(fs(13))
+                 .text_color(t.dim)
+                 .hover((s) => s.text_color(t.foreground))
+                 .on_click(toggleSidebar)
+diff --git a/mod.json b/mod.json
+index feaba94..c8ba1a1 100644
+--- a/mod.json
++++ b/mod.json
+@@ -1 +1,8 @@
+-{ "place": "none", "title": "Agents" }
++{
++  "place": "none",
++  "title": "Agents",
++  "cloned_from": {
++    "name": "agents",
++    "version": "0.1.11"
++  }
++}
+\ No newline at end of file

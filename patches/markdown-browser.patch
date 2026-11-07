@@ -1,0 +1,7 @@
+diff --git a/mod.json b/mod.json
+index 40b8260..39e0d80 100644
+--- a/mod.json
++++ b/mod.json
+@@ -1 +1 @@
+-{ "place": "right", "size": 300, "title": "Markdown", "overlay": { "width": 220 } }
++{ "place": "none", "size": 300, "title": "Markdown", "overlay": { "width": 220 } }

@@ -1,0 +1,215 @@
+diff --git a/dialog.js b/dialog.js
+index 85c8ba4..dd31ee8 100644
+--- a/dialog.js
++++ b/dialog.js
+@@ -46,6 +46,12 @@ export class Dialog {
+     cx.notify();
+   }
+ 
++  // review fixes: closing cancels the running task, which could stop between `git add --all`
++  // and `git commit`, so Esc and Cancel wait until the action is done.
++  cancel() {
++    if (!this.busy) closeOverlay(props().overlay);
++  }
++
+   danger() {
+     const choice = this.spec.choice;
+     return Boolean(this.spec.danger || choice?.options.find((o) => o.value === this.values[choice.id])?.danger);
+@@ -60,7 +66,7 @@ export class Dialog {
+       .hover((st) => st.opacity(0.88)).on_click(action).child(text);
+     return v_flex().id("git-graph-dialog").track_focus(this.handle).size_full().min_h(0).p(18).bg(t.popover).text_color(t.foreground).text_size(12.8)
+       .on_key_down((e, cx) => {
+-        if (e.key === "escape") closeOverlay(props().overlay);
++        if (e.key === "escape") this.cancel();
+         else if (e.key === "enter" && this.focusedInput < 0) this.confirm(cx);
+         else return;
+         cx.stop_propagation();
+@@ -91,7 +97,7 @@ export class Dialog {
+       .when(Boolean(this.error), (el) => el.child(div().pt(12).text_size(12).text_color(t.ansi1).child(this.error)))
+       .child(div().flex_1())
+       .child(h_flex().pt(16).gap(8).justify_end()
+-        .child(button("gd-cancel", "Cancel", false, () => closeOverlay(props().overlay)))
++        .child(button("gd-cancel", "Cancel", false, () => this.cancel()))
+         .child(button("gd-ok", this.busy ? "Working…" : s.confirm, true, (_e, cx) => this.confirm(cx))));
+   }
+ }
+diff --git a/execute.js b/execute.js
+index 1297e14..9d06a54 100644
+--- a/execute.js
++++ b/execute.js
+@@ -1,9 +1,16 @@
+ // Action execution is separate from the UI so context checks can be tested
+ // against disposable repositories. exec has Herdr's (program, argv, options) shape.
+ import { READ, commandsFor, gitError } from "./git.js";
++import { NO_PROMPT } from "./repos.js";
++
++// review fixes: commands that reach a remote run as the background fetch does, so a
++// repository that needs a login fails at once instead of waiting on a prompt.
++const REMOTE = new Set(["fetch", "pull", "push"]);
+ 
+ export async function executeAction(action, values, ctx, exec) {
+-  const git = (args) => exec("git", args, { cwd: ctx.root, on: ctx.on });
++  const git = (args) => REMOTE.has(args[0])
++    ? exec("env", [...NO_PROMPT, "git", ...args], { cwd: ctx.root, on: ctx.on })
++    : exec("git", args, { cwd: ctx.root, on: ctx.on });
+   const commands = commandsFor(action, values, ctx);
+   // A dialog/menu describes this snapshot, not whatever HEAD happens to be
+   // when the user confirms it. Fetch does not operate on the current branch.
+diff --git a/git.js b/git.js
+index 1716331..fbc073a 100644
+--- a/git.js
++++ b/git.js
+@@ -4,7 +4,9 @@
+ 
+ // Reads write nothing under .git (no index refresh or lock, no fsmonitor
+ // cookie), so the folder watch never wakes for the panel's own reads.
+-export const READ = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "diff.autoRefreshIndex=false"];
++// review fixes: core.quotePath=false keeps a non-ASCII name raw in --name-status and
++// --numstat, as -z output and the diff after "--" have it.
++export const READ = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "diff.autoRefreshIndex=false", "-c", "core.quotePath=false"];
+ export const STATUS = ["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all"];
+ export const UNCOMMITTED = "*";
+ // Git's pretty fields are NUL-free strings; -z terminates each seven-field record.
+@@ -384,7 +386,8 @@ export function fileArgs(commit) {
+   return { status: [...base, "--name-status"], numstat: [...base, "--numstat"] };
+ }
+ 
+-export function joinFiles(statusText, numstatText) {
++// review fixes: `untracked` (paths) marks those files, so a diff opens them as new.
++export function joinFiles(statusText, numstatText, untracked = new Set()) {
+   const stats = new Map();
+   for (const line of numstatText.split("\n").filter(Boolean)) {
+     const [a, d, ...path] = line.split("\t");
+@@ -392,7 +395,7 @@ export function joinFiles(statusText, numstatText) {
+   }
+   return statusText.split("\n").filter(Boolean).map((line) => {
+     const [s, ...path] = line.split("\t"), p = path.join("\t");
+-    return { path: p, status: s[0], ...(stats.get(p) ?? { add: 0, del: 0 }) };
++    return { path: p, status: s[0], ...(untracked.has(p) ? { untracked: true } : {}), ...(stats.get(p) ?? { add: 0, del: 0 }) };
+   });
+ }
+ 
+diff --git a/graph.js b/graph.js
+index 304b1e1..910ce67 100644
+--- a/graph.js
++++ b/graph.js
+@@ -1,6 +1,8 @@
+ // The graph itself: Git Graph's table (graph, description, date, author,
+ // commit) for the focused pane's repository, or `props.folder` when opened as
+ // a pane. Labels take double-clicks (checkout) and right-clicks (menus).
++// panel folder: in the side panel, the repository of the folder Files and Changes show too
++// (panel-folder.js), picked in the folder bar under the header, instead of the focused pane's.
+ import { div, svg, PathBuilder } from "gpui-kit";
+ import { v_flex, h_flex, Scrollbar, v_virtual_list } from "gpui-base";
+ import { spaces, panes, focused, exec, watchFolder, readTextFile, theme, settings, props, shared, setShared, openOverlay, home, notify, knownAgents, updates } from "herdr";
+@@ -11,9 +13,14 @@ import { perform, openDialog, showChanges } from "./act.js";
+ import { icon } from "./menu.js";
+ import { available, check, openUpdate, newer } from "./update.js";
+ import { depthOf, unsearched, findArgs, parseFound, REPO_STATUS, LATEST_TAG, FETCH, REMOTES, fetchable, parseRepoStatus, parseRemotes, webUrl, syncOf } from "./repos.js";
++import { panelFolder, folderBar } from "./panel-folder.js"; // panel folder
+ 
+ function location(folder) {
+   if (folder) return { cwd: folder, on: null };
++  // panel folder: the tab's main pane, or the pane or folder picked for the tab (a diff or Markdown
++  // viewer tab: the folder it was opened from), never just the focused pane.
++  const shown = panelFolder();
++  if (shown) return { cwd: shown.cwd, on: shown.on };
+   const space = spaces().find((s) => s.active), f = focused();
+   const pane = f?.pane ? panes().find((p) => p.pane === f.pane) : null;
+   const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
+@@ -37,6 +44,8 @@ const pad2 = (n) => String(n).padStart(2, "0");
+ const laneColors = (t) => [t.ansi4, t.ansi2, t.ansi5, t.ansi3, t.ansi6, t.ansi1, t.ansi12, t.ansi10, t.ansi13, t.ansi11, t.ansi14, t.ansi9];
+ const isRefChange = (p) => /\/(HEAD|packed-refs)$|\/refs\//.test(p);
+ const inGitDir = (p) => p.includes("/.git/") || p.endsWith("/.git");
++// review fixes: `git add` writes only the index. The panel's own reads leave it alone (READ).
++const isIndex = (p) => /\/index$/.test(p);
+ 
+ function ago(seconds) {
+   const s = Date.now() / 1000 - seconds;
+@@ -56,7 +65,8 @@ function stamp(seconds) {
+ const tilde = (path, on) => (!on && path?.startsWith(home()) ? "~" + path.slice(home().length) : path);
+ const brief = (c) => ({ hash: c.hash, subject: c.subject, parents: c.parents });
+ const count = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+-const sameFiles = (a, b) => a.length === b.length && a.every((f, i) => f.path === b[i].path && f.status === b[i].status);
++// review fixes: staged counts too, so a `git add` redraws the row and the Commit menu's default.
++const sameFiles = (a, b) => a.length === b.length && a.every((f, i) => f.path === b[i].path && f.status === b[i].status && f.staged === b[i].staged);
+ const scopeOf = ({ all, remotes }) => `${all} ${remotes}`;
+ // Folders kept as they were last read, and commits' details (a commit never changes).
+ const SEEN = 24, DETAILS = 200;
+@@ -369,7 +379,7 @@ export class Graph {
+           const paths = (await watchFolder(dir)).map((p) => p.replace(/\\/g, "/"));
+           if (token !== this.watchToken) return;
+           if (paths.some((p) => (gitDir || inGitDir(p)) && isRefChange(p))) this.refresh(cx, true);
+-          else if (paths.some((p) => !gitDir && !inGitDir(p))) this.statusSoon(cx);
++          else if (paths.some((p) => !(gitDir || inGitDir(p)) || isIndex(p))) this.statusSoon(cx); // review fixes
+         }
+       } catch { if (token === this.watchToken) this.watching = null; }
+     });
+@@ -507,7 +517,8 @@ export class Graph {
+         let details;
+         if (commit.uncommitted) {
+           const numstat = this.head ? await git(["diff", "--no-renames", "--no-ext-diff", "--numstat", "HEAD"]) : { stdout: "" };
+-          const stats = joinFiles(this.files.map((f) => `${f.status}\t${f.path}`).join("\n"), numstat.stdout);
++          const untracked = new Set(this.files.filter((f) => f.untracked).map((f) => f.path)); // review fixes
++          const stats = joinFiles(this.files.map((f) => `${f.status}\t${f.path}`).join("\n"), numstat.stdout, untracked);
+           details = { files: stats.slice(0, 500), more: Math.max(0, stats.length - 500) };
+         } else {
+           const args = fileArgs(commit);
+@@ -835,9 +846,10 @@ export class Graph {
+ 
+   empty(t) {
+     const s = this.state, where = tilde(this.cwd, this.on);
+-    const [glyph, title, body] = s === "nofolder" ? ["folder", "No folder", "Focus a terminal to see the history of the repository it's in."]
+-      : s === "norepo" && this.skipped ? ["folder", "Not a git repository", `${where ?? "This folder"} isn't a repository, and is too big to search for them. Focus a terminal in a repository, or in a folder that holds some.`]
+-      : s === "norepo" ? ["folder", "Not a git repository", `${where ?? "This folder"} isn't inside a git repository, and holds none within ${count(depthSetting(), "level")}. Focus a terminal in one, or search deeper in settings.`]
++    // panel folder: the panel follows the folder bar, not the focus, so the hints point there.
++    const [glyph, title, body] = s === "nofolder" ? ["folder", "No folder", "Open a terminal to see the history of the repository it's in."]
++      : s === "norepo" && this.skipped ? ["folder", "Not a git repository", `${where ?? "This folder"} isn't a repository, and is too big to search for them. ${this.folder ? "Focus a terminal in a repository, or in a folder that holds some." : "Pick a pane in a repository above, or a folder that holds some."}`]
++      : s === "norepo" ? ["folder", "Not a git repository", `${where ?? "This folder"} isn't inside a git repository, and holds none within ${count(depthSetting(), "level")}. ${this.folder ? "Focus a terminal in one" : "Pick a pane in one above"}, or search deeper in settings.`]
+       : s === "empty" ? ["commit", "No commits yet", "Make the first commit and it shows up here."]
+       : s === "error" ? ["graph", "Can't read the history", this.error]
+       : ["graph", "Loading history…", ""];
+@@ -861,6 +873,7 @@ export class Graph {
+     const setting = `${depthSetting()} ${tagsShown()}`;
+     if (setting !== this.seenSetting) { const first = this.seenSetting === undefined; this.seenSetting = setting; if (!first && !this.opened) this.refresh(cx); }
+     const t = theme(), mono = settings().font_family ?? "JetBrains Mono", ready = this.state === "ready";
++    const folders = this.folder ? null : folderBar(t, "graph-folders"); // panel folder
+     return v_flex().id("git-graph").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border)
+       .text_color(t.foreground).text_size(12.5).track_focus(this.handle)
+       .on_mouse_move((e, cx) => this.moveDrag(e, cx))
+@@ -878,6 +891,7 @@ export class Graph {
+         if (wide !== this.wide || graphMax !== this.graphMax) { this.wide = wide; this.graphMax = graphMax; cx.notify(); }
+       })
+       .child(this.header(t))
++      .when(Boolean(folders), (e) => e.child(folders)) // panel folder
+       .when(this.state === "workspace", (e) => e.child(this.workspaceList(t)))
+       .when(Boolean(this.picking && this.workspace && this.opened), (e) => e.child(this.picker(t)))
+       .when(ready, (e) => e.child(this.toolbar(t)).child(this.columns(t, this.graphWidth())).child(this.list(t, mono))
+diff --git a/menu.js b/menu.js
+index ff0cd14..d7e0766 100644
+--- a/menu.js
++++ b/menu.js
+@@ -20,7 +20,7 @@ export class Menu {
+ 
+   choose(i, cx) {
+     const it = this.items[i], { overlay, ctx } = props();
+-    if (!it || it.separator || this.busy) return;
++    if (!it || it.separator || this.busy !== undefined) return; // review fixes: item 0 can be the busy one
+     const a = it.action;
+     if (a.type === "newTab") {
+       // As Herdr's + menu: a tab in the selected space, here in the repository.
+diff --git a/repos.js b/repos.js
+index 88e51ec..5311185 100644
+--- a/repos.js
++++ b/repos.js
+@@ -70,7 +70,9 @@ export function parseRepoStatus(stdout) {
+ // A background fetch, as manygit runs it: saved credentials and SSH's own
+ // configuration still work, but nothing may stop to ask for a login. Git tries
+ // askpass before GIT_TERMINAL_PROMPT, so an empty GIT_ASKPASS goes with it.
+-export const FETCH = ["GCM_INTERACTIVE=0", "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=", "git", "fetch", "--quiet"];
++// review fixes: NO_PROMPT is shared with the menu's fetch, pull and push (execute.js).
++export const NO_PROMPT = ["GCM_INTERACTIVE=0", "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS="];
++export const FETCH = [...NO_PROMPT, "git", "fetch", "--quiet"];
+ // Worth fetching: a repository that has a remote, or isn't read yet.
+ export const fetchable = (st) => !st || st.error || Boolean(st.upstream || st.hasRemote);
+ 
