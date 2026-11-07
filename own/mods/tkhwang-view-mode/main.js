@@ -1,5 +1,8 @@
-// tkhwang-view-mode: a [1] | [1|2] | [1|2/3] switch for the shown tab's windows, in its own block
-// beside the tab bar, so it works with any tab bar. Moved out of tabs-dev (its `view mode` lines).
+// tkhwang-view-mode: what the [1] | [1|2] | [1|2/3] window switch does to the shown tab's windows.
+// Moved out of tabs-dev (its `view mode` lines). It draws nothing and sits in an empty 0px block of
+// the layout: the tab bar draws the switch (better-tabs' `view mode` lines, between + and Files)
+// and sends the mode chosen as `tkhwang-view-mode.1`, `2` or `3`; it lights the mode kept in the
+// shared "tkhwang-view-mode.view".
 //
 // 1 ("mobile") shows a tab's main window, its first pane, alone and zoomed, so the secondary
 // windows fold away (they keep running) and the side panel keeps its room. 2 ("desktop") shows
@@ -13,8 +16,7 @@
 // The mode is shared, so it survives restarts; the panes 1 zoomed are remembered so 2 and 3
 // unzoom exactly those on their own (a click on 2 or 3 unzooms any).
 import { View, div } from "gpui-kit";
-import { h_flex, v_flex } from "gpui-base";
-import { spaces, panes, terminals, machines, run, theme, shared, setShared, nextCommand } from "herdr";
+import { spaces, panes, terminals, machines, run, shared, setShared, nextCommand } from "herdr";
 
 const VIEW = "tkhwang-view-mode.view";
 const VIEW_ZOOMED = "tkhwang-view-mode.zoomed";
@@ -24,12 +26,10 @@ const VIEW_PARKED = "tkhwang-view-mode.parked";
 const FROM_TABS_DEV = [[VIEW, "tabs-dev.view"], [VIEW_ZOOMED, "tabs-dev.view-zoomed"], [VIEW_PARKED, "tabs-dev.view-parked"]];
 // How many windows a click on each mode gives a tab.
 const VIEW_WINDOWS = { mobile: 1, desktop: 2, triple: 3 };
-// `herdr-app do tkhwang-view-mode.<command>` (or a key bound to it) chooses a mode as a click does.
+// The switch's buttons send these (`run("tkhwang-view-mode.1")`), and so can `herdr-app do` or a key.
 const COMMANDS = { 1: "mobile", 2: "desktop", 3: "triple", mobile: "mobile", desktop: "desktop", triple: "triple" };
 // How long a window asked for, or one being put away, is waited on.
 const WAIT_MS = 10000;
-// better-tabs' bar: its rows start 6.5px down and are 29px high; the switch sits on its first row.
-const BAR_TOP = 6.5, ROW_H = 29;
 
 const viewMode = () => { const mode = shared(VIEW); return mode === "mobile" || mode === "triple" ? mode : "desktop"; };
 const shownTab = () => spaces().find(s => s.active)?.tabs?.find(c => c.active)?.id ?? null;
@@ -92,7 +92,7 @@ export default class ViewMode extends View {
     if (moved || parked.has(tab)) this.shapeView(tab, windowsOf(inTab), mode, false);
   }
 
-  // A click on the switch puts the shown tab in that mode even when the mode is on already (a tab
+  // A click on the switch (its command) puts the shown tab in that mode even when the mode is on already (a tab
   // split since it was folded folds then), over a zoom done by hand too: 2 and 3 show their
   // windows, 1 the main window. A click on 2 or 3 also gives the tab the windows it lacks.
   chooseView(mode) {
@@ -188,43 +188,12 @@ export default class ViewMode extends View {
   }
 
   render(cx) {
-    // Commands and shared state must not change during a render: every render (live data, shared
-    // state or the switch's hover changed) looks at the shown tab right after it instead.
+    // Commands and shared state must not change during a render: every render (live data or shared
+    // state changed) looks at the shown tab right after it instead.
     if (!this.syncQueued) {
       this.syncQueued = true;
       cx.timer.after(0, () => { this.syncQueued = false; this.syncView(); });
     }
-    const t = theme(), mode = viewMode();
-    const stop = (_e, cx) => cx.stop_propagation();
-    // Each button is a little picture of the tab's windows, numbered as the folder bar numbers
-    // them: 1 the main window alone, 2 the secondary window beside it, 3 another under 2. The mode
-    // you are in is lit. The picture's lines take the digits' color, so hover is tracked here.
-    // columns: left to right, each a window's digit, or a list of digits for windows stacked in it.
-    const viewChoice = (id, columns, label, choice) => {
-      const on = mode === choice, hot = on || this.viewHover === id, ink = hot ? t.foreground : t.dim;
-      return div().id(id).h(24).px(5).flex_none().flex().items_center().justify_center().rounded(5)
-        .bg(on ? t.selected : hot ? t.hover : t.chrome).text_color(ink)
-        .tooltip(label).accessibility_label(label)
-        .on_hover((hovered, cx) => {
-          const next = hovered ? id : this.viewHover === id ? null : this.viewHover;
-          if (next !== this.viewHover) { this.viewHover = next; cx.notify(); }
-        })
-        .on_mouse_down("left", stop).on_click(() => this.chooseView(choice))
-        .child(h_flex().h(19).flex_none().rounded(3).border_1().border_color(ink).children(columns.map((column, i) => {
-          const cells = Array.isArray(column) ? column : [column], stacked = cells.length > 1;
-          return v_flex().w(columns.length === 1 ? 15 : 12).h_full().when(i > 0, el => el.border_l(1).border_color(ink))
-            .children(cells.map((digit, j) => div().w_full().flex_1().flex().items_center().justify_center().font_semibold()
-              .text_size(stacked ? 8 : 10).when(stacked, el => el.line_height("8px"))
-              .when(j > 0, el => el.border_t(1).border_color(ink)).child(digit)));
-        })));
-    };
-    const viewSwitch = h_flex().id("view-mode").h(26).p(1).gap(1).flex_none().items_center().rounded(6).border_1().border_color(t.border)
-      .child(viewChoice("view-mobile", ["1"], "1: the main window alone", "mobile"))
-      .child(viewChoice("view-desktop", ["1", "2"], "2: the main and secondary windows side by side (a tab with one window gets a second; a third is put away, still running)", "desktop"))
-      .child(viewChoice("view-triple", ["1", ["2", "3"]], "3: the main window, and two windows stacked on its right (the third 2 put away comes back; a tab with fewer gets them)", "triple"));
-    // The block continues the tab bar: its color and bottom line, the switch on the bar's first row.
-    return h_flex().id("view-mode-bar").size_full().pt(BAR_TOP).pr(10).justify_end().items_start()
-      .bg(t.chrome).border_b(1).border_color(t.border)
-      .child(h_flex().h(ROW_H).flex_none().items_center().child(viewSwitch));
+    return div();
   }
 }

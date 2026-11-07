@@ -20,8 +20,8 @@ After a first `apply`, restart Herdr (it sees new mod folders at start) and pick
 | --- | --- |
 | **Spaces list**<br>`better-spaces` | branch and PR status per space, nested worktrees, workbranch tasks named after their repo with its branch (one repo) or their task folder with the project and only what differs (several repos), dev server ports, agent status glows (a breathing contour while an agent works, yellow where it's open on the right), a cyan current space |
 | **Agents list**<br>`agents-dev` | agents grouped under their space, nested rows, workbranch tasks named as in the Spaces list, the repo an agent is in for a multi-repo task, the same glows and highlight |
-| **Tab bar**<br>`better-tabs` | tabs that wrap onto more lines and drag to reorder, **Files**, **Changes** and **Git** buttons that drag too or tuck into a ⋮ menu, each space's open panel remembered |
-| **Window switch**<br>`tkhwang-view-mode` | a [1] \| [1\|2] \| [1\|2/3] switch right of the tab bar: the shown tab's main window alone, with one window beside it, or with two stacked beside it |
+| **Tab bar**<br>`better-tabs` | tabs that wrap onto more lines and drag to reorder, then at the right `+`, the window switch, and **Files**, **Changes** and **Git** buttons that drag too or tuck into a ⋮ menu; each space's open panel remembered |
+| **Window switch**<br>`tkhwang-view-mode` | a [1] \| [1\|2] \| [1\|2/3] switch between `+` and Files: the shown tab's main window alone, with one window beside it, or with two stacked beside it |
 | **Side panel**<br>`files-dev`, `better-changes`, `git-graph` | Files, Changes and Git show one folder, the tab's first pane (its main window), or a pane or folder picked in the folder bar under each panel's header; the focus no longer moves them |
 | **Side panel, Changes**<br>`better-changes` | staged/unstaged groups, diffs, a repo picker in workbranch wrappers, AI commit messages, a Push button |
 | **Side panel, Git**<br>`git-graph` | a commit graph, or a Manygit list in a folder of repos |
@@ -99,7 +99,7 @@ In `config/` and `own/`.
 <details>
 <summary><b><code>config/layouts/tkhwang-herdr.json</code></b> · the window</summary>
 
-Clone of the shipped `main` layout; its spaces block points to `better-spaces`, its agents block to `agents-dev`, its Files block to `files-dev`, its Changes slot to `better-changes`, its tab bar is a `tabs-row` of `better-tabs` (its Files, Changes and Git buttons in the `tabs` block's `props`) and `tkhwang-view-mode` (the 120px `view-mode` block), and its side panel (`panel-body`) has a third block, `graph`, for `git-graph`. Its theme is Catppuccin: `herdr-catppuccin` (Mocha) in dark mode, `herdr-catppuccin-latte` in light mode.
+Clone of the shipped `main` layout; its spaces block points to `better-spaces`, its agents block to `agents-dev`, its Files block to `files-dev`, its Changes slot to `better-changes`, its tab bar to `better-tabs` (its Files, Changes and Git buttons in the block's `props`), a 0px `view-mode` block at the bottom to `tkhwang-view-mode` (beside copy-on-select's), and its side panel (`panel-body`) has a third block, `graph`, for `git-graph`. Its theme is Catppuccin: `herdr-catppuccin` (Mocha) in dark mode, `herdr-catppuccin-latte` in light mode.
 
 </details>
 
@@ -126,13 +126,13 @@ Herdr can list an agent's terminal in a folder other than the one the agent work
 <details>
 <summary><b><code>own/mods/tkhwang-view-mode</code></b> · [1] | [1|2] | [1|2/3] window switch</summary>
 
-A switch for the shown tab's main window, its first pane, and its secondary windows, in its own 120px `view-mode` block right of `better-tabs` (the layout's `tabs-row`), drawn as the bar continued: each button is a small picture of the windows it shows, numbered as the folder bar numbers them, and the mode you are in is lit. It was `tabs-dev`'s `view mode` lines, moved out so it works beside any tab bar and `better-tabs` stays unpatched; it does what it did there:
+What a switch for the shown tab's main window, its first pane, and its secondary windows does. It was `tabs-dev`'s `view mode` lines, moved out of the tab bar. The tab bar draws the switch, between `+` and Files (`better-tabs`' `view mode` lines, below): each button is a small picture of the windows it shows, numbered as the folder bar numbers them, the mode you are in is lit, and a click sends the mode to this mod as `tkhwang-view-mode.1`, `2` or `3`. This mod draws nothing and sits in an empty 0px `view-mode` block at the bottom of the layout, as copy-on-select does. It does what `tabs-dev` did:
 
 - **1** zooms the main window so the secondary ones fold away, still running, and the side panel keeps its room, also when switching tabs and when an agent starting or ending in the shown tab changes whether it folds. It folds a tab of main and one or two secondary windows, or one with more windows and an agent; one with more windows and no agent (`herdr-dev.sh`'s four-pane dev tab) keeps them all, on a click on 1 too.
 - **2** shows main and one secondary window side by side; a click on 2 in a tab with only its main window splits it down the middle for a shell in main's folder. 2 puts a tab's third window away instead of closing it: its terminal keeps running without a pane (`terminal.park`), unless an agent runs there.
 - **3** shows main and two secondary windows stacked on its right; a click on 3 makes the ones a tab lacks, and first puts back the shell 2 put away (`terminal.keep`), so 3 → 2 → 3 keeps its history. Closing a tab ends the shells put away from it.
 
-On their own the modes never touch a zoom done by hand, and a pane split in while a tab is folded stays in view; a click on any button, the lit one too, puts the shown tab in that mode (2 and 3 unzoom any pane). `herdr-app do tkhwang-view-mode.1` (or `2`, `3`; also `mobile`, `desktop`, `triple`) does what a click does, so a key in `keys.json` can too; none is bound.
+On their own the modes never touch a zoom done by hand, and a pane split in while a tab is folded stays in view; a click on any button, the lit one too, puts the shown tab in that mode (2 and 3 unzoom any pane). `herdr-app do tkhwang-view-mode.1` (or `2`, `3`; also `mobile`, `desktop`, `triple`) does what a click does, so a key in `keys.json` can too; none is bound. Another tab bar can have the switch by sending the same commands and lighting the shared mode.
 
 The mode, the panes 1 zoomed and the shells 2 put away are the shared `tkhwang-view-mode.view`, `tkhwang-view-mode.zoomed` and `tkhwang-view-mode.parked`; the first start takes over `tabs-dev`'s `tabs-dev.view*` once, so its mode and folds carry on. It looks at the shown tab right after each render instead of during it, so it never runs a command while the window draws.
 
@@ -253,6 +253,21 @@ It reads the folder Files and Git show too, with the folder bar under its header
 </details>
 
 <details>
+<summary><b><code>better-tabs</code></b> · tab bar · <a href="https://github.com/munza/herdr-mods/tree/main/better-tabs">munza/herdr-mods</a> at <code>6e2ffe0</code> (3.0.0), patched</summary>
+
+**Markers:** `new tab place`, `view mode`
+
+[munza/herdr-mods](https://github.com/munza/herdr-mods/tree/main/better-tabs) at `6e2ffe0` (3.0.0 in its `mod.json`), in the layout's `tabs` block in place of `tabs-dev`. Tabs wrap onto more lines and the bar grows to hold them (`layout.resize` on `tabs`); a press held 400 ms and moved 12 px drags a tab, and a line in the gap shows where it lands. On the right, **Files**, **Changes** and **Git** open the side panel's `files`, `changes` and `graph` blocks; a button dragged onto ⋮ is hidden there, as are buttons that don't fit, and the arrangement is kept per layout in the shared `better-tabs.toolbar`. Each space's open panel is kept in the mod's own storage and opened again on returning to the space. A zoomed tab shows `Z` after its name.
+
+Patched so the bar reads tabs … `+` [1] | [1|2] | [1|2/3] Files Changes Git ⋮, as `tabs-dev`'s did:
+- `+` (Herdr's own `new-menu`) leads the buttons on the first row at the right instead of following the last tab; a tab dropped on it still goes last (marked `new tab place`).
+- The window switch comes next (marked `view mode`; `views/view-switch.js`). It only draws: a click sends the mode to `tkhwang-view-mode` (above), and the lit button is the shared `tkhwang-view-mode.view`.
+
+The buttons are the `tabs` block's `props.buttons` in `config/layouts/tkhwang-herdr.json`: the mod's two defaults, Files and Changes, plus Git with `mods/git-graph/icons/graph.svg`, the icon `tabs-dev` used. It runs no programs and reaches no network; the only file it reads is its own `mod.json`, for `settings`. Apache-2.0 ([`licenses/herdr-mods/LICENSE`](licenses/herdr-mods/LICENSE), [`licenses/herdr-mods/NOTICE-6e2ffe0`](licenses/herdr-mods/NOTICE-6e2ffe0)). When that repo moves on, `./sync.sh update better-tabs <commit>`.
+
+</details>
+
+<details>
 <summary><b><code>git-graph</code></b> · side panel, Git · <a href="https://github.com/rabeeh-ta/herdr-git-graph">rabeeh-ta/herdr-git-graph</a> at <code>4a9cd1e</code> (v0.3.1), patched</summary>
 
 **Markers:** `review fixes`, `panel folder`
@@ -287,15 +302,6 @@ It reads the previewed file and watches its folder; opening in the default app r
 ### Open-source mods as they are
 
 `kind: oss` without a patch, and the `fetch` mod and themes, which aren't kept here.
-
-<details>
-<summary><b><code>better-tabs</code></b> · tab bar · <a href="https://github.com/munza/herdr-mods/tree/main/better-tabs">munza/herdr-mods</a> at <code>6e2ffe0</code> (3.0.0), unchanged</summary>
-
-[munza/herdr-mods](https://github.com/munza/herdr-mods/tree/main/better-tabs) at `6e2ffe0` (3.0.0 in its `mod.json`), unchanged, in the layout's `tabs` block in place of `tabs-dev`. Tabs wrap onto more lines and the bar grows to hold them (`layout.resize` on `tabs-row`, so the `view-mode` block beside it grows too); a press held 400 ms and moved 12 px drags a tab, and a line in the gap shows where it lands. The `+` after the last tab opens Herdr's own `new-menu`. On the right, **Files**, **Changes** and **Git** open the side panel's `files`, `changes` and `graph` blocks; a button dragged onto ⋮ is hidden there, as are buttons that don't fit, and the arrangement is kept per layout in the shared `better-tabs.toolbar`. Each space's open panel is kept in the mod's own storage and opened again on returning to the space. A zoomed tab shows `Z` after its name.
-
-The buttons are the `tabs` block's `props.buttons` in `config/layouts/tkhwang-herdr.json`: the mod's two defaults, Files and Changes, plus Git with `mods/git-graph/icons/graph.svg`, the icon `tabs-dev` used. It runs no programs and reaches no network; the only file it reads is its own `mod.json`, for `settings`. Apache-2.0 ([`licenses/herdr-mods/LICENSE`](licenses/herdr-mods/LICENSE), [`licenses/herdr-mods/NOTICE-6e2ffe0`](licenses/herdr-mods/NOTICE-6e2ffe0)). It has no patch yet: change it in the app, then `./sync.sh backup`. When that repo moves on, `./sync.sh update better-tabs <commit>`.
-
-</details>
 
 <details>
 <summary><b><code>herdr-open-with-zed</code></b> · <code>+</code> menu · <a href="https://github.com/atleugim/herdr-open-with-zed">atleugim/herdr-open-with-zed</a> at <code>a15570e</code>, unchanged</summary>
