@@ -52,7 +52,8 @@ export default class ViewMode extends View {
   init(_props, cx) {
     for (const [key, old] of FROM_TABS_DEV) if (shared(key) == null && shared(old) != null) setShared(key, shared(old));
     // tab id → a window 2 or 3 asked for: when, how many windows the tab had, whether a click
-    // asked (the next window it wants follows), and the pane to give the focus back to.
+    // asked (the next window it wants follows), and the pane to give the focus back to: any pane
+    // of the tab, a mod pane such as a Markdown preview too.
     this.opening = new Map();
     // terminal → the tab 2 is putting it away from, and when it asked, until its pane is gone
     // (tidyParked lets go then), or for WAIT_MS should it never go.
@@ -81,7 +82,7 @@ export default class ViewMode extends View {
       this.opening.delete(id);
       if (id !== tab || windows.length < asked.had) continue;
       this.shapeView(id, windows, viewMode(), asked.click);
-      if (!asked.click && asked.focus && windows.some(p => p.pane === asked.focus)) run("pane.focus", { pane: asked.focus });
+      if (!asked.click && asked.focus && panesOf(id).some(p => p.pane === asked.focus)) run("pane.focus", { pane: asked.focus });
     }
     if (!inTab.length) return; // panes not in yet (a fresh start): look again on the next render
     const mode = viewMode(), key = viewKey(tab, mode, inTab), at = `${mode}\0${tab}`, moved = at !== this.viewAt;
@@ -131,7 +132,7 @@ export default class ViewMode extends View {
     const shown = new Set(panes().map(p => p.terminal)), live = liveTerminals();
     const back = n === 2 ? [...parkedOf(tab)].reverse().find(t => !shown.has(t) && live.has(t)) : null;
     if (!back && !click) return;
-    this.opening.set(tab, { at: now, had: n, click, focus: windows.find(p => p.focused)?.pane ?? null });
+    this.opening.set(tab, { at: now, had: n, click, focus: panesOf(tab).find(p => p.focused)?.pane ?? null });
     run("pane.focus", { pane: windows[n === 1 ? 0 : 1].pane });
     if (back) { run("terminal.keep", { terminal: back, place: "down" }); return; }
     const place = n === 1 ? "right" : "down", folder = windows[0].cwd;
