@@ -19,7 +19,8 @@
         "commit": "e12fd31866f33cb613922d0b33ea506e6f23ce3c",
         "path": "defaults/mods/agents"
       },
-      "license": "herdr"
+      "license": "herdr",
+      "shared": ["play.svg", "pause.svg", "stop.svg"]
     },
     "changes-dev": {
       "kind": "herdr",
@@ -70,7 +71,7 @@
           "license": "herdr-spaces-status"
         }
       ],
-      "shared": ["ports.js"]
+      "shared": ["ports.js", "play.svg", "pause.svg", "stop.svg"]
     },
     "better-changes": {
       "kind": "oss",
