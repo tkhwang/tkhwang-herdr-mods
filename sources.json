@@ -80,6 +80,22 @@
         "path": "better-changes/mods/better-changes"
       },
       "license": "herdr-mods",
+      "extras": [
+        {
+          "file": "lookup.js",
+          "repo": "LaiqianDS/herdr-mods",
+          "commit": "eae0b91ca69653fcd30e16de7fbee56d11447b86",
+          "path": "file-icons/mods/file-icons/lookup.js",
+          "license": "file-icons"
+        },
+        {
+          "file": "icons.js",
+          "repo": "LaiqianDS/herdr-mods",
+          "commit": "eae0b91ca69653fcd30e16de7fbee56d11447b86",
+          "path": "file-icons/mods/file-icons/icons.js",
+          "license": "file-icons"
+        }
+      ],
       "shared": ["markdown.js", "panel-folder.js"]
     },
     "better-tabs": {

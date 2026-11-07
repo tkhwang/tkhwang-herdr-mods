@@ -24,7 +24,7 @@ After a first `apply`, restart Herdr (it sees new mod folders at start) and pick
 | **Window switch**<br>`tkhwang-view-mode` | a [1] \| [1\|2] \| [1\|2/3] switch between `+` and Files: the shown tab's main window alone, with one window beside it, or with two stacked beside it |
 | **Side panel, Files**<br>`file-icons` | the focused pane's folder as a tree with VS Code's Material Icon Theme icons, git letters and a read-only preview |
 | **Side panel**<br>`better-changes`, `git-graph` | Changes and Git show one folder, the tab's first pane (its main window), or a pane or folder picked in the folder bar under each panel's header; the focus no longer moves them |
-| **Side panel, Changes**<br>`better-changes` | staged/unstaged groups, diffs, a repo picker in workbranch wrappers, AI commit messages, a Push button |
+| **Side panel, Changes**<br>`better-changes` | staged/unstaged groups, diffs, a repo picker in workbranch wrappers, AI commit messages, a Push button, the Files panel's Material icons |
 | **Side panel, Git**<br>`git-graph` | a commit graph, or a Manygit list in a folder of repos |
 | **Terminal**<br>copy-on-select | copies a selection on mouse release |
 | **Theme**<br>Catppuccin | Mocha in dark mode, Latte in light mode, a `#60b9fc` accent |
@@ -38,7 +38,7 @@ Other people's code and mine are kept apart, so it is always clear what I change
 | Folder | Whose | What |
 | --- | --- | --- |
 | `upstream/<mod>/` | theirs | the mod as its source ships it, at the commit `sources.json` pins; never edited by hand |
-| `upstream/<mod>.extra/` | theirs | single files taken into that mod from another repo (`navigation.js` from filipores/herdr-spaces-status) |
+| `upstream/<mod>.extra/` | theirs | single files taken into that mod from another repo (`navigation.js` from filipores/herdr-spaces-status; `lookup.js` and `icons.js` from file-icons) |
 | `patches/<mod>.patch` | mine | everything I changed in that mod, as one diff against its upstream |
 | `own/shared/` | mine | files several mods carry the same copy of: `panel-folder.js`, `markdown.js`, `ports.js` |
 | `own/mods/<mod>/` | mine | mods written from scratch: `tkhwang-view-mode` |
@@ -236,7 +236,7 @@ The layout's `spaces` block props size the list, in the interface font (marked `
 <details>
 <summary><b><code>better-changes</code></b> · side panel, Changes · <a href="https://github.com/munza/herdr-mods/tree/main/better-changes">munza/herdr-mods</a> at <code>77d94f7</code>, patched</summary>
 
-**Markers:** `wrapper repos`, `commit box`, `ai message`, `push button`, `markdown tab`, `panel folder`, `changes font`
+**Markers:** `wrapper repos`, `commit box`, `ai message`, `push button`, `markdown tab`, `panel folder`, `changes font`, `file icons`
 
 [munza/herdr-mods](https://github.com/munza/herdr-mods/tree/main/better-changes) at `77d94f7` (staged/unstaged groups with stage buttons, tree/flat list, inline/side-by-side diff in one reusable tab), in the Changes slot. Patched with the same `wrapper repos` repo picker (it commits staged changes of the picked repo only), and `mod.json` `place` is `none` so it doesn't also dock a second right sidebar. The commit message is a text area (3 to 8 rows) with the buttons under it, Message, Commit and Push filling the row 1 : 2 : 1 (marked `commit box`; `BUTTON_WEIGHTS` at the top of `main.js`). They keep their look while the panel rereads git (every 10 s and on every file change), and a press during that runs as soon as it ends (`whenLoaded`).
 
@@ -254,6 +254,8 @@ The sidebar passes them to the diff tab through the shared `better-changes.font`
 `markdown.js` (marked `markdown tab`, the same file as in `tabs-dev`) keeps the panel on the repo it was on while the Markdown viewer tab is shown. `changes-dev` stays installed: put it back in the layout's `changes` block to switch.
 
 It reads the folder Files and Git show too, with the folder bar under its header, instead of the focused pane's; in a workbranch wrapper the repo picker stays under the folder bar (marked `panel folder`; `panel-folder.js`, below).
+
+File and folder rows, and the diff tab's header, show the Material Icon Theme icons of the Files panel, `file-icons`; a folder's icon opens with it (marked `file icons`). The lookup is file-icons' own `lookup.js` and `icons.js` at `eae0b91`, kept as they ship in `upstream/better-changes.extra/` (a mod can't import another mod's files), MIT ([`licenses/file-icons`](licenses/file-icons)); the SVGs are read from the installed `file-icons`, so it has to stay installed.
 
 </details>
 
@@ -313,7 +315,7 @@ It reads the previewed file and watches its folder; opening in the default app r
 
 [LaiqianDS/herdr-mods](https://github.com/LaiqianDS/herdr-mods/tree/main/file-icons) at `eae0b91`, unchanged; from [cybertron288/herdr-mods](https://github.com/cybertron288/herdr-mods/tree/main/file-icons), with its icon lookup moved into `lookup.js`. In the layout's `files` block in place of `files-dev`: Herdr's Files panel with the icons of VS Code's [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme) 5.40.0 (1,184 SVGs in `icons/`, about 5 MB; light themes get the light variants). It lists the focused pane's folder as a tree opened one folder at a time, folders first and `.git` left out, at most 500 entries a folder and 5,000 in all; changed files carry a git letter (`A`, `M`, `D`, `U`); a click on a file shows its text read-only, with syntax colors, until **←**. It refreshes every 10 s, and on a change under the folder when it is on this computer.
 
-It runs `sh` to list a folder (`powershell` on Windows) and `git rev-parse` and `git status` (no optional locks), on the space's machine; it reads the files you click and uses no network. Its folder must keep the name `file-icons`: the icon paths are `mods/file-icons/icons/…` (`DIR` in `main.js` and `lookup.js`). MIT, © cybertron288 ([`licenses/file-icons/LICENSE`](licenses/file-icons/LICENSE)); the icons MIT, © Material Extensions (`upstream/file-icons/LICENSE-material-icon-theme.txt`); the panel is based on Herdr's own `files` mod, Apache-2.0 ([`licenses/herdr`](licenses/herdr)). It has no patch yet: change it in the app, then `./sync.sh backup`. When that repo moves on, `./sync.sh update file-icons <commit>`.
+Its icons also show in Changes (`better-changes`' `file icons` reads them from `mods/file-icons/icons/`), so keep it installed. It runs `sh` to list a folder (`powershell` on Windows) and `git rev-parse` and `git status` (no optional locks), on the space's machine; it reads the files you click and uses no network. Its folder must keep the name `file-icons`: the icon paths are `mods/file-icons/icons/…` (`DIR` in `main.js` and `lookup.js`). MIT, © cybertron288 ([`licenses/file-icons/LICENSE`](licenses/file-icons/LICENSE)); the icons MIT, © Material Extensions (`upstream/file-icons/LICENSE-material-icon-theme.txt`); the panel is based on Herdr's own `files` mod, Apache-2.0 ([`licenses/herdr`](licenses/herdr)). It has no patch yet: change it in the app, then `./sync.sh backup`. When that repo moves on, `./sync.sh update file-icons <commit>`.
 
 </details>
 
@@ -345,6 +347,7 @@ It runs `sh` to list a folder (`powershell` on Windows) and `git rev-parse` and 
 | `upstream/agents-dev`, `changes-dev`, `files-dev`, `spaces-dev`, `tabs-dev` | Herdr's own mods ([herdrdev/herdr-app](https://github.com/herdrdev/herdr-app)) | Apache-2.0, [`licenses/herdr`](licenses/herdr) |
 | `upstream/better-spaces`, `better-changes`, `better-tabs` | [munza/herdr-mods](https://github.com/munza/herdr-mods) | Apache-2.0, [`licenses/herdr-mods`](licenses/herdr-mods) (`LICENSE`; `NOTICE` at `77d94f7` for `better-spaces` and `better-changes`, `NOTICE-6e2ffe0` for `better-tabs`) |
 | `upstream/better-spaces.extra/navigation.js` | [filipores/herdr-spaces-status](https://github.com/filipores/herdr-spaces-status) | Apache-2.0, [`licenses/herdr-spaces-status`](licenses/herdr-spaces-status) (`LICENSE`, `NOTICE`) |
+| `upstream/better-changes.extra/lookup.js`, `icons.js` | [LaiqianDS/herdr-mods](https://github.com/LaiqianDS/herdr-mods)' file-icons | MIT, [`licenses/file-icons`](licenses/file-icons) |
 | `upstream/herdr-open-with-zed` | [atleugim/herdr-open-with-zed](https://github.com/atleugim/herdr-open-with-zed) | Apache-2.0, [`licenses/herdr-open-with-zed`](licenses/herdr-open-with-zed) |
 | `upstream/git-graph` | [rabeeh-ta/herdr-git-graph](https://github.com/rabeeh-ta/herdr-git-graph) | MIT, [`licenses/herdr-git-graph`](licenses/herdr-git-graph); icons Lucide, ISC |
 | `upstream/markdown-browser` | [ohneda/herdr-markdown-browser](https://github.com/ohneda/herdr-markdown-browser) | MIT, [`licenses/herdr-markdown-browser`](licenses/herdr-markdown-browser) |
