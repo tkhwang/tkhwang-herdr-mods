@@ -82,6 +82,15 @@
       "license": "herdr-mods",
       "shared": ["markdown.js", "panel-folder.js"]
     },
+    "better-tabs": {
+      "kind": "oss",
+      "upstream": {
+        "repo": "munza/herdr-mods",
+        "commit": "6e2ffe050ea69d84056ccfa595a432c884de3f43",
+        "path": "better-tabs/mods/better-tabs"
+      },
+      "license": "herdr-mods"
+    },
     "git-graph": {
       "kind": "oss",
       "upstream": {
@@ -120,6 +129,9 @@
         "files": ["main.js", "mod.json"]
       },
       "license": null
+    },
+    "tkhwang-view-mode": {
+      "kind": "own"
     }
   },
   "themes": [

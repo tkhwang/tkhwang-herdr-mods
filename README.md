@@ -20,17 +20,15 @@ After a first `apply`, restart Herdr (it sees new mod folders at start) and pick
 | --- | --- |
 | **Spaces list**<br>`better-spaces` | branch and PR status per space, nested worktrees, workbranch tasks named after their repo with its branch (one repo) or their task folder with the project and only what differs (several repos), dev server ports, agent status glows (a breathing contour while an agent works, yellow where it's open on the right), a cyan current space |
 | **Agents list**<br>`agents-dev` | agents grouped under their space, nested rows, workbranch tasks named as in the Spaces list, the repo an agent is in for a multi-repo task, the same glows and highlight |
-| **Tab bar**<br>`tabs-dev` | yellow agent tabs, wider tabs, a **Git** button, a Markdown icon, a [1] \| [1\|2] \| [1\|2/3] window switch |
-| **`+` menu**<br>`herdr-open-with-zed` | **Open with Zed** for the focused terminal's folder |
+| **Tab bar**<br>`better-tabs` | tabs that wrap onto more lines and drag to reorder, **Files**, **Changes** and **Git** buttons that drag too or tuck into a ⋮ menu, each space's open panel remembered |
+| **Window switch**<br>`tkhwang-view-mode` | a [1] \| [1\|2] \| [1\|2/3] switch right of the tab bar: the shown tab's main window alone, with one window beside it, or with two stacked beside it |
 | **Side panel**<br>`files-dev`, `better-changes`, `git-graph` | Files, Changes and Git show one folder, the tab's first pane (its main window), or a pane or folder picked in the folder bar under each panel's header; the focus no longer moves them |
-| **Side panel, Files**<br>`files-dev` | the previewed file feeds the Markdown icon |
 | **Side panel, Changes**<br>`better-changes` | staged/unstaged groups, diffs, a repo picker in workbranch wrappers, AI commit messages, a Push button |
 | **Side panel, Git**<br>`git-graph` | a commit graph, or a Manygit list in a folder of repos |
-| **Center tab**<br>`markdown-browser` | a Markdown preview of the picked file |
 | **Terminal**<br>copy-on-select | copies a selection on mouse release |
 | **Theme**<br>Catppuccin | Mocha in dark mode, Latte in light mode, a `#60b9fc` accent |
 
-`spaces-dev` and `changes-dev` stay installed as fallbacks: put either back in the layout's spaces or changes block to switch.
+`tabs-dev`, `spaces-dev` and `changes-dev` stay installed as fallbacks: put one back in the layout's tabs, spaces or changes block to switch. `tabs-dev` was the tab bar before `better-tabs`, and what only it opens isn't reachable from `better-tabs`: the **Open with Zed** `+` menu (`herdr-open-with-zed`) and the Markdown icon with its `markdown-browser` tab (fed by `files-dev`). Its window switch moved out into `tkhwang-view-mode`; with `tabs-dev` back, take the layout's `view-mode` block out, or both switches fold windows.
 
 ## How this repo is organized
 
@@ -42,9 +40,9 @@ Other people's code and mine are kept apart, so it is always clear what I change
 | `upstream/<mod>.extra/` | theirs | single files taken into that mod from another repo (`navigation.js` from filipores/herdr-spaces-status) |
 | `patches/<mod>.patch` | mine | everything I changed in that mod, as one diff against its upstream |
 | `own/shared/` | mine | files several mods carry the same copy of: `panel-folder.js`, `markdown.js`, `ports.js` |
-| `own/mods/<mod>/` | mine | mods written from scratch (none yet) |
+| `own/mods/<mod>/` | mine | mods written from scratch: `tkhwang-view-mode` |
 | `config/` | mine | `layouts/tkhwang-herdr.json`, `settings.json`, `keys.json` |
-| `licenses/<source>/` | theirs | each source's `LICENSE` and `NOTICE`, as shipped at the pinned commit |
+| `licenses/<source>/` | theirs | each source's `LICENSE` and `NOTICE`, as shipped at the pinned commit; `NOTICE-<commit>` beside it while mods from one source are pinned at different commits |
 | `sources.json` | | where each mod comes from: repo, path, commit (and tag), license, extra files, shared files |
 
 ```
@@ -94,14 +92,14 @@ For a Herdr clone the ref is a Herdr version tag: `./sync.sh update agents-dev v
 
 Each change is also marked with a comment in the code, so `grep -n "status glow" patches/better-spaces.patch` (or the same in `build/mods/better-spaces/`) finds every line of it.
 
-### Mine: config and shared files
+### Mine: config, shared files and my own mods
 
 In `config/` and `own/`.
 
 <details>
 <summary><b><code>config/layouts/tkhwang-herdr.json</code></b> · the window</summary>
 
-Clone of the shipped `main` layout; its spaces block points to `better-spaces`, its agents block to `agents-dev`, its Files block to `files-dev`, its Changes slot to `better-changes`, its tab bar to `tabs-dev`, and its side panel (`panel-body`) has a third block, `graph`, for `git-graph`. Its theme is Catppuccin: `herdr-catppuccin` (Mocha) in dark mode, `herdr-catppuccin-latte` in light mode.
+Clone of the shipped `main` layout; its spaces block points to `better-spaces`, its agents block to `agents-dev`, its Files block to `files-dev`, its Changes slot to `better-changes`, its tab bar is a `tabs-row` of `better-tabs` (its Files, Changes and Git buttons in the `tabs` block's `props`) and `tkhwang-view-mode` (the 120px `view-mode` block), and its side panel (`panel-body`) has a third block, `graph`, for `git-graph`. Its theme is Catppuccin: `herdr-catppuccin` (Mocha) in dark mode, `herdr-catppuccin-latte` in light mode.
 
 </details>
 
@@ -122,6 +120,21 @@ The shipped panels follow the focused pane, each on its own, so a click on a sec
 A folder bar under each panel's header has a chip for each folder the tab's panes are in, numbered by the first pane there and with its branch, and **Folder…**, which picks any folder on this machine in the system's folder picker (not in a space on another machine). The lit chip is the folder all three show. A click on another chip lights it in all three for that tab, until another pick: a picked pane is followed as it changes folder, and once it closes the main pane is back. Picks are kept by tab in the shared `panel-folder.picks`. The Changes diff tab and the Markdown viewer tab have no bar and keep the folder they were opened from.
 
 Herdr can list an agent's terminal in a folder other than the one the agent works in; **Folder…** shows the right one then. It is one file, `own/shared/panel-folder.js`, that `sync.sh` copies into all three mods. Edit it in any of them in the app: `backup` takes it back, and stops if the three copies differ.
+
+</details>
+
+<details>
+<summary><b><code>own/mods/tkhwang-view-mode</code></b> · [1] | [1|2] | [1|2/3] window switch</summary>
+
+A switch for the shown tab's main window, its first pane, and its secondary windows, in its own 120px `view-mode` block right of `better-tabs` (the layout's `tabs-row`), drawn as the bar continued: each button is a small picture of the windows it shows, numbered as the folder bar numbers them, and the mode you are in is lit. It was `tabs-dev`'s `view mode` lines, moved out so it works beside any tab bar and `better-tabs` stays unpatched; it does what it did there:
+
+- **1** zooms the main window so the secondary ones fold away, still running, and the side panel keeps its room, also when switching tabs and when an agent starting or ending in the shown tab changes whether it folds. It folds a tab of main and one or two secondary windows, or one with more windows and an agent; one with more windows and no agent (`herdr-dev.sh`'s four-pane dev tab) keeps them all, on a click on 1 too.
+- **2** shows main and one secondary window side by side; a click on 2 in a tab with only its main window splits it down the middle for a shell in main's folder. 2 puts a tab's third window away instead of closing it: its terminal keeps running without a pane (`terminal.park`), unless an agent runs there.
+- **3** shows main and two secondary windows stacked on its right; a click on 3 makes the ones a tab lacks, and first puts back the shell 2 put away (`terminal.keep`), so 3 → 2 → 3 keeps its history. Closing a tab ends the shells put away from it.
+
+On their own the modes never touch a zoom done by hand, and a pane split in while a tab is folded stays in view; a click on any button, the lit one too, puts the shown tab in that mode (2 and 3 unzoom any pane). `herdr-app do tkhwang-view-mode.1` (or `2`, `3`; also `mobile`, `desktop`, `triple`) does what a click does, so a key in `keys.json` can too; none is bound.
+
+The mode, the panes 1 zoomed and the shells 2 put away are the shared `tkhwang-view-mode.view`, `tkhwang-view-mode.zoomed` and `tkhwang-view-mode.parked`; the first start takes over `tabs-dev`'s `tabs-dev.view*` once, so its mode and folds carry on. It looks at the shown tab right after each render instead of during it, so it never runs a command while the window draws.
 
 </details>
 
@@ -147,9 +160,11 @@ The layout's `agents` block props size the list the same way as the Spaces list'
 </details>
 
 <details>
-<summary><b><code>tabs-dev</code></b> · tab bar · clone of Herdr's <code>tabs</code> 0.1.11</summary>
+<summary><b><code>tabs-dev</code></b> · fallback tab bar · clone of Herdr's <code>tabs</code> 0.1.11</summary>
 
 **Markers:** `open with zed`, `tab width`, `tab kind`, `git graph`, `markdown browser`, `view mode`
+
+Replaced in the layout by `better-tabs` and kept as the fallback: put `tabs-dev` back in the layout's `tabs` block to switch. Its `view mode` lines (the window switch below) also live on as `own/mods/tkhwang-view-mode`, under its own shared keys: with `tabs-dev` back, take the layout's `view-mode` block out.
 
 Clone of the shipped tab bar whose `+` button opens `herdr-open-with-zed` (one row taller, 543px); patch marked `open with zed`. Each tab is at least 180px wide, so a short name is still easy to click, with the status dot and close button at its right edge (marked `tab width`).
 
@@ -168,7 +183,7 @@ Right of `+`, a [1] | [1|2] | [1|2/3] switch for a tab's main window, its first 
 
 **Markers:** `markdown tab`, `panel folder`
 
-Clone of the shipped Files panel (0.1.13). It publishes the file its preview shows as the shared `files-dev.shown`, so the tab bar's Markdown icon can render it, and while that Markdown viewer tab is the shown one it keeps listing the folder the file came from instead of jumping to the space folder (marked `markdown tab`; `markdown.js` is the same file as in `tabs-dev`).
+Clone of the shipped Files panel (0.1.13). It publishes the file its preview shows as the shared `files-dev.shown`, so `tabs-dev`'s Markdown icon can render it (unused with `better-tabs`), and while that Markdown viewer tab is the shown one it keeps listing the folder the file came from instead of jumping to the space folder (marked `markdown tab`; `markdown.js` is the same file as in `tabs-dev`).
 
 It lists the folder Changes and Git show too, with the folder bar under its header, instead of the focused pane's, and in the Changes diff tab it stays on the diff's repository (marked `panel folder`; `panel-folder.js`, below).
 
@@ -263,7 +278,7 @@ MIT ([`licenses/herdr-git-graph/LICENSE`](licenses/herdr-git-graph/LICENSE)); it
 <details>
 <summary><b><code>markdown-browser</code></b> · center tab · <a href="https://github.com/ohneda/herdr-markdown-browser">ohneda/herdr-markdown-browser</a> at <code>bb1f3c7</code>, <code>place</code> changed</summary>
 
-[ohneda/herdr-markdown-browser](https://github.com/ohneda/herdr-markdown-browser) at `bb1f3c7`: a native Markdown preview pane (Herdr's `TextView.markdown`, so no images or Mermaid), reloaded when the file changes, with a **Default app** button and `⌘⇧O` (its `mod:markdown-browser` section is merged into `keys.json`) for the system's default `.md` app. Used here only as the viewer the tab bar's Markdown icon opens; its own Markdown list panel isn't in the layout. The one change: `mod.json` `place` is `none`, so it doesn't dock a column at the window's right edge.
+[ohneda/herdr-markdown-browser](https://github.com/ohneda/herdr-markdown-browser) at `bb1f3c7`: a native Markdown preview pane (Herdr's `TextView.markdown`, so no images or Mermaid), reloaded when the file changes, with a **Default app** button and `⌘⇧O` (its `mod:markdown-browser` section is merged into `keys.json`) for the system's default `.md` app. Used here only as the viewer `tabs-dev`'s Markdown icon opens, so nothing opens it while the layout uses `better-tabs`; its own Markdown list panel isn't in the layout. The one change: `mod.json` `place` is `none`, so it doesn't dock a column at the window's right edge.
 
 It reads the previewed file and watches its folder; opening in the default app runs `sh` with `realpath` and `open`; its list (unused here) would run `git rev-parse`, `git ls-files` or `find`; no network. MIT ([`licenses/herdr-markdown-browser/LICENSE`](licenses/herdr-markdown-browser/LICENSE)). To update it, `./sync.sh update markdown-browser <commit>`; the `place` change is its whole patch.
 
@@ -274,9 +289,18 @@ It reads the previewed file and watches its folder; opening in the default app r
 `kind: oss` without a patch, and the `fetch` mod and themes, which aren't kept here.
 
 <details>
+<summary><b><code>better-tabs</code></b> · tab bar · <a href="https://github.com/munza/herdr-mods/tree/main/better-tabs">munza/herdr-mods</a> at <code>6e2ffe0</code> (3.0.0), unchanged</summary>
+
+[munza/herdr-mods](https://github.com/munza/herdr-mods/tree/main/better-tabs) at `6e2ffe0` (3.0.0 in its `mod.json`), unchanged, in the layout's `tabs` block in place of `tabs-dev`. Tabs wrap onto more lines and the bar grows to hold them (`layout.resize` on `tabs-row`, so the `view-mode` block beside it grows too); a press held 400 ms and moved 12 px drags a tab, and a line in the gap shows where it lands. The `+` after the last tab opens Herdr's own `new-menu`. On the right, **Files**, **Changes** and **Git** open the side panel's `files`, `changes` and `graph` blocks; a button dragged onto ⋮ is hidden there, as are buttons that don't fit, and the arrangement is kept per layout in the shared `better-tabs.toolbar`. Each space's open panel is kept in the mod's own storage and opened again on returning to the space. A zoomed tab shows `Z` after its name.
+
+The buttons are the `tabs` block's `props.buttons` in `config/layouts/tkhwang-herdr.json`: the mod's two defaults, Files and Changes, plus Git with `mods/git-graph/icons/graph.svg`, the icon `tabs-dev` used. It runs no programs and reaches no network; the only file it reads is its own `mod.json`, for `settings`. Apache-2.0 ([`licenses/herdr-mods/LICENSE`](licenses/herdr-mods/LICENSE), [`licenses/herdr-mods/NOTICE-6e2ffe0`](licenses/herdr-mods/NOTICE-6e2ffe0)). It has no patch yet: change it in the app, then `./sync.sh backup`. When that repo moves on, `./sync.sh update better-tabs <commit>`.
+
+</details>
+
+<details>
 <summary><b><code>herdr-open-with-zed</code></b> · <code>+</code> menu · <a href="https://github.com/atleugim/herdr-open-with-zed">atleugim/herdr-open-with-zed</a> at <code>a15570e</code>, unchanged</summary>
 
-[atleugim/herdr-open-with-zed](https://github.com/atleugim/herdr-open-with-zed) at `a15570e`, unchanged: Herdr's `+` menu (`new-menu` 0.1.11) with an **Open with Zed** row that opens the focused terminal's folder in Zed (`zed`, else `zeditor`, else `open -a Zed`). Apache-2.0 ([`licenses/herdr-open-with-zed/LICENSE`](licenses/herdr-open-with-zed/LICENSE)); when that repo moves on, `./sync.sh update herdr-open-with-zed <commit>`. It has no patch here.
+[atleugim/herdr-open-with-zed](https://github.com/atleugim/herdr-open-with-zed) at `a15570e`, unchanged: Herdr's `+` menu (`new-menu` 0.1.11) with an **Open with Zed** row that opens the focused terminal's folder in Zed (`zed`, else `zeditor`, else `open -a Zed`). `tabs-dev`'s `+` opens it; `better-tabs`' `+` opens Herdr's own `new-menu`, so it isn't reachable while the layout uses `better-tabs`. Apache-2.0 ([`licenses/herdr-open-with-zed/LICENSE`](licenses/herdr-open-with-zed/LICENSE)); when that repo moves on, `./sync.sh update herdr-open-with-zed <commit>`. It has no patch here.
 
 </details>
 
@@ -299,7 +323,7 @@ It reads the previewed file and watches its folder; opening in the default app r
 | Code | From | License |
 | --- | --- | --- |
 | `upstream/agents-dev`, `changes-dev`, `files-dev`, `spaces-dev`, `tabs-dev` | Herdr's own mods ([herdrdev/herdr-app](https://github.com/herdrdev/herdr-app)) | Apache-2.0, [`licenses/herdr`](licenses/herdr) |
-| `upstream/better-spaces`, `better-changes` | [munza/herdr-mods](https://github.com/munza/herdr-mods) | Apache-2.0, [`licenses/herdr-mods`](licenses/herdr-mods) (`LICENSE`, `NOTICE`) |
+| `upstream/better-spaces`, `better-changes`, `better-tabs` | [munza/herdr-mods](https://github.com/munza/herdr-mods) | Apache-2.0, [`licenses/herdr-mods`](licenses/herdr-mods) (`LICENSE`; `NOTICE` at `77d94f7` for `better-spaces` and `better-changes`, `NOTICE-6e2ffe0` for `better-tabs`) |
 | `upstream/better-spaces.extra/navigation.js` | [filipores/herdr-spaces-status](https://github.com/filipores/herdr-spaces-status) | Apache-2.0, [`licenses/herdr-spaces-status`](licenses/herdr-spaces-status) (`LICENSE`, `NOTICE`) |
 | `upstream/herdr-open-with-zed` | [atleugim/herdr-open-with-zed](https://github.com/atleugim/herdr-open-with-zed) | Apache-2.0, [`licenses/herdr-open-with-zed`](licenses/herdr-open-with-zed) |
 | `upstream/git-graph` | [rabeeh-ta/herdr-git-graph](https://github.com/rabeeh-ta/herdr-git-graph) | MIT, [`licenses/herdr-git-graph`](licenses/herdr-git-graph); icons Lucide, ISC |
