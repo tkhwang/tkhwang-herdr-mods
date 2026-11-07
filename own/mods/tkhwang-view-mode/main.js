@@ -58,6 +58,9 @@ export default class ViewMode extends View {
     // terminal → the tab 2 is putting it away from, and when it asked, until its pane is gone
     // (tidyParked lets go then), or for WAIT_MS should it never go.
     this.parking = new Map();
+    // tab id → the mode of a click whose window came while the tab was hidden: the click goes on
+    // (its next window) once the tab is shown again, if the mode is still that one.
+    this.resume = new Map();
     cx.spawn(async (cx) => {
       for (;;) {
         const mode = COMMANDS[await nextCommand()];
@@ -75,12 +78,18 @@ export default class ViewMode extends View {
     const parked = this.tidyParked();
     // A tab whose window 2 or 3 asked for has it now, or is gone: the next click there may ask
     // again. A click's windows come one at a time: one coming to the shown tab brings the next,
-    // and one coming after a click on 2 is put away again.
+    // and one coming after a click on 2 is put away again. One coming to a hidden tab brings
+    // nothing there (focusing or opening a pane would show that tab): its click waits in
+    // `resume` until the tab is shown.
     for (const [id, asked] of [...this.opening]) {
       const windows = windowsOf(panesOf(id));
       if (windows.length === asked.had) continue;
       this.opening.delete(id);
-      if (id !== tab || windows.length < asked.had) continue;
+      if (windows.length < asked.had) continue;
+      if (id !== tab) {
+        if (asked.click) this.resume.set(id, asked.mode);
+        continue;
+      }
       this.shapeView(id, windows, viewMode(), asked.click);
       if (!asked.click && asked.focus && panesOf(id).some(p => p.pane === asked.focus)) run("pane.focus", { pane: asked.focus });
     }
@@ -90,7 +99,12 @@ export default class ViewMode extends View {
       this.viewKey = key; this.viewAt = at;
       this.applyView(inTab, mode, false);
     }
-    if (moved || parked.has(tab)) this.shapeView(tab, windowsOf(inTab), mode, false);
+    if (moved || parked.has(tab)) {
+      // A click that waited for this tab goes on, as a click, if the mode is still the clicked one.
+      const resumed = this.resume.get(tab) === mode;
+      this.resume.delete(tab);
+      this.shapeView(tab, windowsOf(inTab), mode, resumed);
+    }
   }
 
   // A click on the switch (its command) puts the shown tab in that mode even when the mode is on already (a tab
@@ -132,7 +146,7 @@ export default class ViewMode extends View {
     const shown = new Set(panes().map(p => p.terminal)), live = liveTerminals();
     const back = n === 2 ? [...parkedOf(tab)].reverse().find(t => !shown.has(t) && live.has(t)) : null;
     if (!back && !click) return;
-    this.opening.set(tab, { at: now, had: n, click, focus: panesOf(tab).find(p => p.focused)?.pane ?? null });
+    this.opening.set(tab, { at: now, had: n, click, mode, focus: panesOf(tab).find(p => p.focused)?.pane ?? null });
     run("pane.focus", { pane: windows[n === 1 ? 0 : 1].pane });
     if (back) { run("terminal.keep", { terminal: back, place: "down" }); return; }
     const place = n === 1 ? "right" : "down", folder = windows[0].cwd;
