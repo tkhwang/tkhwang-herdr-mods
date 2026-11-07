@@ -1,5 +1,5 @@
 diff --git a/main.js b/main.js
-index f8aa00f..4e08216 100644
+index f8aa00f..b0b0abe 100644
 --- a/main.js
 +++ b/main.js
 @@ -1,15 +1,31 @@
@@ -102,7 +102,7 @@ index f8aa00f..4e08216 100644
  // What a stored color name looks like on an avatar (the same in every mod
  // that draws space avatars): one strong color per hue, light and dark alike.
  const AVATAR_COLORS = {
-@@ -63,9 +123,63 @@ export function glyph(status) {
+@@ -63,9 +123,67 @@ export function glyph(status) {
    return status === "blocked" || status === "done" ? "●" : "·";
  }
  
@@ -150,16 +150,20 @@ index f8aa00f..4e08216 100644
 +  return ([...words[0]][0] + (words.length > 1 ? [...words.at(-1)][0] : "")).toUpperCase();
 +}
 +
-+// current highlight, status mark: a row's background says where you are and whether its agent
-+// works, so the theme's working blue belongs to working alone: working, a pale working blue;
-+// the current row, a pale tint of the text color (so it shows in light themes too; stronger
-+// than a hover's), its name bold; both, a deeper working blue. Done, blocked and idle rows have
-+// no background: their mark at the right end says it.
++// current highlight, status mark: a row's background says where you are and what its agent does: needs you, a pale orange (the most urgent state gets the strongest mark);
++// working, a pale working blue (the theme's working blue means working alone); the current row,
++// a pale tint of the text color (so it shows in light themes too; stronger than a hover's), its
++// name bold; the current row that needs you or works, a deeper orange or blue. Done and idle
++// rows have no background: done's green stop at the right end says it.
 +const tint = (color, aa) => (/^#[0-9a-f]{6}$/i.test(color ?? "") ? color + aa : color);
-+function rowTint(current, working, t) {
-+  if (working) return tint(t.working, current ? "40" : "24");
++function rowTint(current, state, t) {
++  const color = state === "blocked" ? GLOW.blocked : state === "working" ? t.working : null;
++  if (color) return tint(color, current ? "40" : "24");
 +  return tint(t.foreground, "2e");
  }
++// status mark: a space row's state for its background; needs you wins over working, being more
++// urgent (a space can have one agent of each).
++const rowState = (status, working) => (status === "blocked" ? "blocked" : working ? "working" : null);
 +// current highlight: the current row also has a bar on its left edge in the text color, so where
 +// you are reads at a glance whatever its background (neutral, or blue while its agent works);
 +// blue stays working's.
@@ -167,7 +171,7 @@ index f8aa00f..4e08216 100644
  
  export default class Spaces extends View {
    // ── Lifecycle and refresh scheduling ──────────────────────────────────────
-@@ -83,6 +197,10 @@ export default class Spaces extends View {
+@@ -83,6 +201,10 @@ export default class Spaces extends View {
      this.ready = {}; // machine -> its layout was readable at the last look
      this.at = {}; // Space ID -> checkout key at the previous refresh.
      this.watching = new Set(); // local repos' git folders
@@ -178,7 +182,7 @@ index f8aa00f..4e08216 100644
      // Spaces made while this runs wait (at most a moment) for their git, so a
      // worktree appears under its repo instead of jumping there.
      this.shown = new Set(spaces().map((s) => s.id));
-@@ -101,6 +219,134 @@ export default class Spaces extends View {
+@@ -101,6 +223,134 @@ export default class Spaces extends View {
      // `git status` walks the whole tree, on another machine a process there:
      // only when its answer could have changed (see `due`).
      cx.timer.every(250, (cx) => this.checkNew(cx));
@@ -313,7 +317,7 @@ index f8aa00f..4e08216 100644
    }
  
    checkNew(cx) {
-@@ -123,6 +369,7 @@ export default class Spaces extends View {
+@@ -123,6 +373,7 @@ export default class Spaces extends View {
      this.prObserver.refresh(places, cx);
      const due = this.due(now, sp, ps);
      if (due.size) this.refreshGit(due, cx);
@@ -321,7 +325,7 @@ index f8aa00f..4e08216 100644
      if (sp.some((s) => !this.shown.has(s.id))) cx.notify();
    }
  
-@@ -188,7 +435,9 @@ export default class Spaces extends View {
+@@ -188,7 +439,9 @@ export default class Spaces extends View {
  
      if (window().active) {
        for (const key of usedKeys) {
@@ -332,7 +336,7 @@ index f8aa00f..4e08216 100644
          if (
            needsPolling &&
            !this.folded.has(JSON.parse(key)[0]) &&
-@@ -268,8 +517,10 @@ export default class Spaces extends View {
+@@ -268,8 +521,10 @@ export default class Spaces extends View {
        );
        if (r.code !== 0) {
          // Only git's own "no" is remembered as no repo; anything else is asked again.
@@ -344,7 +348,7 @@ index f8aa00f..4e08216 100644
          return;
        }
        // The repo's own .git folder names it; a worktree's top differs from it.
-@@ -304,6 +555,9 @@ export default class Spaces extends View {
+@@ -304,6 +559,9 @@ export default class Spaces extends View {
          }
        }
        this.git[key] = info;
@@ -354,7 +358,7 @@ index f8aa00f..4e08216 100644
        if (!on) this.watch(repo, cx);
      } catch {
        // Couldn't ask (the machine is away): keep what it showed, look again later.
-@@ -312,6 +566,106 @@ export default class Spaces extends View {
+@@ -312,6 +570,106 @@ export default class Spaces extends View {
      }
    }
  
@@ -461,7 +465,7 @@ index f8aa00f..4e08216 100644
    watch(repo, cx) {
      if (this.watching.has(repo)) return;
      this.watching.add(repo);
-@@ -355,7 +709,11 @@ export default class Spaces extends View {
+@@ -355,7 +713,11 @@ export default class Spaces extends View {
        Date.now() - (this.born[w.id] ??= Date.now()) > 1500;
      for (const w of sp) if (!this.shown.has(w.id) && ready(w)) this.shown.add(w.id);
      const list = sp
@@ -474,7 +478,7 @@ index f8aa00f..4e08216 100644
        .filter((r) => this.shown.has(r.w.id));
      const mains = new Set(list.filter((r) => r.g && !r.g.linked).map((r) => r.g.repo));
      const nested = (r) => r.g?.linked && mains.has(r.g.repo);
-@@ -375,7 +733,13 @@ export default class Spaces extends View {
+@@ -375,7 +737,13 @@ export default class Spaces extends View {
    // The rows, under a header per machine once one isn't this computer.
    grouped(t, collapsed) {
      const rows = this.ordered();
@@ -489,7 +493,7 @@ index f8aa00f..4e08216 100644
      const remote = [
        ...new Set([
          ...rows.map((r) => r.w.machine).filter(Boolean),
-@@ -393,7 +757,7 @@ export default class Spaces extends View {
+@@ -393,7 +761,7 @@ export default class Spaces extends View {
      const loadingRow = (m) =>
        div()
          .id(`machine-loading-${m ?? "local"}`)
@@ -498,7 +502,7 @@ index f8aa00f..4e08216 100644
          .flex_none()
          .px(8)
          .text_size(em(0.95))
-@@ -408,7 +772,7 @@ export default class Spaces extends View {
+@@ -408,7 +776,7 @@ export default class Spaces extends View {
        const folded = this.folded.has(m);
        const head = h_flex()
          .id(`machine-${m ?? "local"}`)
@@ -507,7 +511,7 @@ index f8aa00f..4e08216 100644
          .flex_none()
          .px(collapsed ? 2 : 8)
          .gap(7)
-@@ -472,7 +836,7 @@ export default class Spaces extends View {
+@@ -472,7 +840,7 @@ export default class Spaces extends View {
          );
        const empty = h_flex()
          .id(`machine-new-${m ?? "local"}`)
@@ -516,7 +520,7 @@ index f8aa00f..4e08216 100644
          .flex_none()
          .px(8)
          .gap(7)
-@@ -610,7 +974,7 @@ export default class Spaces extends View {
+@@ -610,7 +978,7 @@ export default class Spaces extends View {
      const status = this.checkoutStatus(w);
      return h_flex()
        .id(`space-pr-line-${w.id}`)
@@ -525,7 +529,7 @@ index f8aa00f..4e08216 100644
        .pl(tree ? 44 : 27)
        .gap(6)
        .items_center()
-@@ -629,22 +993,28 @@ export default class Spaces extends View {
+@@ -629,22 +997,28 @@ export default class Spaces extends View {
    }
    // ── Expanded/compact rows and sidebar rendering ──────────────────────────
  
@@ -553,12 +557,12 @@ index f8aa00f..4e08216 100644
        .justify_center()
        .rounded(8)
 -      .when(on, (el) => el.bg(t.selected))
-+      .when(on || Boolean(working), (el) => el.bg(rowTint(on, working, t))) // current highlight, status mark
++      .when(on || Boolean(rowState(w.status, working)), (el) => el.bg(rowTint(on, rowState(w.status, working), t))) // current highlight, status mark
 +      .when(on, (el) => el.child(currentBar(t))) // current highlight
        .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
        .when(this.pressed === i && this.over !== i, (el) => el.opacity(0.5))
        .when(this.pressed !== null && this.over === i && this.pressed !== i, (el) =>
-@@ -698,35 +1068,43 @@ export default class Spaces extends View {
+@@ -698,35 +1072,43 @@ export default class Spaces extends View {
                  .bg(fill)
                  .items_center()
                  .justify_center()
@@ -607,12 +611,12 @@ index f8aa00f..4e08216 100644
        .justify_center()
        .gap(4)
 -      .when(w.active, (el) => el.bg(t.raised))
-+      .when(w.active || Boolean(working), (el) => el.bg(rowTint(w.active, working, t))) // current highlight, status mark
++      .when(w.active || Boolean(rowState(w.status, working)), (el) => el.bg(rowTint(w.active, rowState(w.status, working), t))) // current highlight, status mark
 +      .when(w.active, (el) => el.child(currentBar(t))) // current highlight
        .hover((s) => s.bg(t.hover))
        .on_click(() => run("space.select", { id: w.id }))
        .child(
-@@ -734,13 +1112,23 @@ export default class Spaces extends View {
+@@ -734,13 +1116,23 @@ export default class Spaces extends View {
            .text_color(w.active ? t.foreground : t.muted)
            .child(String(i + 1)),
        )
@@ -638,7 +642,7 @@ index f8aa00f..4e08216 100644
      const palette = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
      const ids = new Set(sp.map((p) => p.id));
      const kept = Object.fromEntries(
-@@ -772,7 +1160,7 @@ export default class Spaces extends View {
+@@ -772,7 +1164,7 @@ export default class Spaces extends View {
        })
        .child(
          h_flex()
@@ -647,7 +651,7 @@ index f8aa00f..4e08216 100644
            .pl(16)
            .pr(10)
            .items_center()
-@@ -800,6 +1188,9 @@ export default class Spaces extends View {
+@@ -800,6 +1192,9 @@ export default class Spaces extends View {
            .min_h(0)
            .px(8)
            .pb(14)

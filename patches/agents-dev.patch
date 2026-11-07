@@ -1,5 +1,5 @@
 diff --git a/main.js b/main.js
-index 4ec2d54..a776bd1 100644
+index 4ec2d54..097cf73 100644
 --- a/main.js
 +++ b/main.js
 @@ -14,6 +14,25 @@ function find(node, id) {
@@ -38,7 +38,7 @@ index 4ec2d54..a776bd1 100644
  const SECTION = { 4: "Needs you", 3: "Done", 2: "Working", 1: "Idle" };
  const SECTION_STATUS = { 4: "blocked", 3: "done", 2: "working" };
  
-@@ -68,6 +88,46 @@ function icon(p, size, color) {
+@@ -68,6 +88,47 @@ function icon(p, size, color) {
    return p.tint ? svg(p.icon).size(size).flex_none().text_color(color) : image(p.icon).w(size).h(size).flex_none();
  }
  
@@ -61,14 +61,15 @@ index 4ec2d54..a776bd1 100644
 +  return ([...words[0]][0] + (words.length > 1 ? [...words.at(-1)][0] : "")).toUpperCase();
 +}
 +
-+// current highlight, status mark: as in the Spaces list, a row's background says where you are and whether its agent
-+// works, so the theme's working blue belongs to working alone: working, a pale working blue;
-+// the current row, a pale tint of the text color (so it shows in light themes too; stronger
-+// than a hover's), its name bold; both, a deeper working blue. Done, blocked and idle rows have
-+// no background: their mark at the right end says it.
++// current highlight, status mark: as in the Spaces list, a row's background says where you are and what its agent does: needs you, a pale orange (the most urgent state gets the strongest mark);
++// working, a pale working blue (the theme's working blue means working alone); the current row,
++// a pale tint of the text color (so it shows in light themes too; stronger than a hover's), its
++// name bold; the current row that needs you or works, a deeper orange or blue. Done and idle
++// rows have no background: done's green stop at the right end says it.
 +const tint = (color, aa) => (/^#[0-9a-f]{6}$/i.test(color ?? "") ? color + aa : color);
-+function rowTint(current, working, t) {
-+  if (working) return tint(t.working, current ? "40" : "24");
++function rowTint(current, state, t) {
++  const color = state === "blocked" ? GLOW.blocked : state === "working" ? t.working : null;
++  if (color) return tint(color, current ? "40" : "24");
 +  return tint(t.foreground, "2e");
 +}
 +// current highlight: the current row also has a bar on its left edge in the text color, so where
@@ -85,7 +86,7 @@ index 4ec2d54..a776bd1 100644
  export default class Agents extends View {
    init(_props, cx) {
      if (props()?.sortMenu) return;
-@@ -170,25 +230,25 @@ export default class Agents extends View {
+@@ -170,25 +231,25 @@ export default class Agents extends View {
      });
    }
  
@@ -116,7 +117,7 @@ index 4ec2d54..a776bd1 100644
          .when(Boolean(l), el => el.border_l(1.5).border_color(t.input))
          .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(6))))
        .when(Boolean(pic), el => el.child(div().mr(8).child(pic)))
-@@ -196,15 +256,23 @@ export default class Agents extends View {
+@@ -196,15 +257,23 @@ export default class Agents extends View {
        .child(this.status(t, { status: st }, compact));
    }
  
@@ -146,7 +147,7 @@ index 4ec2d54..a776bd1 100644
    }
  
    render(cx) {
-@@ -215,7 +283,8 @@ export default class Agents extends View {
+@@ -215,7 +284,8 @@ export default class Agents extends View {
      let list = agents();
      this.listed = new Map(list.map((a) => [a.address, a.status]));
      const all = terminals();
@@ -156,7 +157,7 @@ index 4ec2d54..a776bd1 100644
      const now = Date.now();
      this.track(list, now);
      this.hold(list);
-@@ -233,7 +302,8 @@ export default class Agents extends View {
+@@ -233,7 +303,8 @@ export default class Agents extends View {
        const subs = collapsed ? [] : this.tree(all, a.address);
        const r = row(a, i, subs);
        if (this.folded.has(a.address)) return [r];
@@ -166,7 +167,7 @@ index 4ec2d54..a776bd1 100644
      };
  
      // The fold chevron; folded, the count too, colored by the most urgent one.
-@@ -249,7 +319,7 @@ export default class Agents extends View {
+@@ -249,7 +320,7 @@ export default class Agents extends View {
          .flex()
          .items_center()
          .rounded(4)
@@ -175,7 +176,7 @@ index 4ec2d54..a776bd1 100644
          .text_color(open ? t.dim : (t[top] ?? t.dim))
          .cursor_pointer()
          .hover((s) => s.bg(t.hover).text_color(t.foreground))
-@@ -277,6 +347,31 @@ export default class Agents extends View {
+@@ -277,6 +348,31 @@ export default class Agents extends View {
        if (detail.get(a.address) == null && seen[`${a.space_name}\u0000`] > 1) detail.set(a.address, label(a));
      }
  
@@ -207,7 +208,7 @@ index 4ec2d54..a776bd1 100644
      const row = (a, i, subs = []) => {
        const pic = icon(a.program, 16, t.foreground);
        const more = detail.get(a.address);
-@@ -285,11 +380,15 @@ export default class Agents extends View {
+@@ -285,11 +381,15 @@ export default class Agents extends View {
        if (collapsed) {
          return h_flex()
            .id(`ag-${a.address}`)
@@ -219,12 +220,12 @@ index 4ec2d54..a776bd1 100644
            .flex_none()
            .items_center()
            .gap(4)
-+          .when(a.focused || a.status === "working", (el) => el.bg(rowTint(a.focused, a.status === "working", t))) // current highlight, status mark
++          .when(a.focused || a.status === "working" || a.status === "blocked", (el) => el.bg(rowTint(a.focused, a.status, t))) // current highlight, status mark
 +          .when(a.focused, (el) => el.child(currentBar(t))) // current highlight
            .hover((s) => s.bg(t.hover))
            .on_click(() => run("pane.focus", { pane: a.pane }))
            .child(div().flex_1().min_w(0).whitespace_nowrap().text_right().text_color(t.muted).child(String(i + 1)))
-@@ -318,16 +417,20 @@ export default class Agents extends View {
+@@ -318,16 +418,20 @@ export default class Agents extends View {
        // Under a space header the space goes without saying; an automatic tab number says nothing.
        // Without a space header above (priority, pinned) the row names its space.
        const full = byPriority || isPinned;
@@ -244,12 +245,12 @@ index 4ec2d54..a776bd1 100644
          .items_center()
          .gap(9)
 -        .when(a.focused, (el) => el.bg(t.selected))
-+        .when(a.focused || a.status === "working", (el) => el.bg(rowTint(a.focused, a.status === "working", t))) // current highlight, status mark
++        .when(a.focused || a.status === "working" || a.status === "blocked", (el) => el.bg(rowTint(a.focused, a.status, t))) // current highlight, status mark
 +        .when(a.focused, (el) => el.child(currentBar(t))) // current highlight
          .cursor_pointer()
          .hover((s) => s.bg(t.hover))
          .on_hover((on, cx) => {
-@@ -343,12 +446,14 @@ export default class Agents extends View {
+@@ -343,12 +447,14 @@ export default class Agents extends View {
              cx.notify();
            })).child(pic)))
          .child(h_flex().flex_1().min_w(0).gap(5).items_center()
@@ -267,7 +268,7 @@ index 4ec2d54..a776bd1 100644
          .child(this.status(t, a, byPriority && !isPinned));
      };
  
-@@ -369,12 +474,12 @@ export default class Agents extends View {
+@@ -369,12 +475,12 @@ export default class Agents extends View {
        return h_flex()
          .id(g.id)
          .px(8)
@@ -283,7 +284,7 @@ index 4ec2d54..a776bd1 100644
          .font_medium()
          .cursor_pointer()
          .hover((s) => s.text_color(t.foreground))
-@@ -389,9 +494,59 @@ export default class Agents extends View {
+@@ -389,9 +495,59 @@ export default class Agents extends View {
            .when(!byPriority && top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
            .child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim)));
      };
@@ -344,7 +345,7 @@ index 4ec2d54..a776bd1 100644
  
      return v_flex()
        .size_full()
-@@ -399,44 +554,44 @@ export default class Agents extends View {
+@@ -399,44 +555,44 @@ export default class Agents extends View {
        .bg(t.chrome)
        .border_t(1)
        .border_color(t.border)
