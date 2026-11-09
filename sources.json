@@ -144,7 +144,8 @@
         "commit": "eae0b91ca69653fcd30e16de7fbee56d11447b86",
         "path": "file-icons/mods/file-icons"
       },
-      "license": "file-icons"
+      "license": "file-icons",
+      "shared": ["markdown.js"]
     },
     "copy-on-select": {
       "kind": "fetch",
@@ -157,6 +158,9 @@
       "license": null
     },
     "tkhwang-view-mode": {
+      "kind": "own"
+    },
+    "tkhwang-markdown": {
       "kind": "own"
     }
   },
