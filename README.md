@@ -22,14 +22,15 @@ After a first `apply`, restart Herdr (it sees new mod folders at start) and pick
 | **Agents list**<br>`agents-dev` | agents grouped under their space, nested rows, workbranch tasks named as in the Spaces list, the repo an agent is in for a multi-repo task, the same status colors and highlight |
 | **Tab bar**<br>`better-tabs` | tabs that wrap onto more lines and drag to reorder, then at the right `+`, the window switch, and **Files**, **Changes** and **Git** buttons that drag too or tuck into a ⋮ menu; each space's open panel remembered |
 | **Window switch**<br>`tkhwang-view-mode` | a [1] \| [1\|2] \| [1\|2/3] switch between `+` and Files: the shown tab's main window alone, with one window beside it, or with two stacked beside it |
-| **Side panel, Files**<br>`file-icons` | the focused pane's folder as a tree with VS Code's Material Icon Theme icons, git letters and a read-only preview |
+| **Side panel, Files**<br>`file-icons` | the focused pane's folder as a tree with VS Code's Material Icon Theme icons, git letters and a read-only preview; a Markdown file opens in the Markdown tab instead |
 | **Side panel**<br>`better-changes`, `git-graph` | Changes and Git show one folder, the tab's first pane (its main window), or a pane or folder picked in the folder bar under each panel's header; the focus no longer moves them |
-| **Side panel, Changes**<br>`better-changes` | staged/unstaged groups, diffs, a repo picker in workbranch wrappers, AI commit messages, a Push button, the Files panel's Material icons |
+| **Side panel, Changes**<br>`better-changes` | staged/unstaged groups, diffs, a repo picker in workbranch wrappers, AI commit messages, a Push button, the Files panel's Material icons; a Markdown file opens in the Markdown tab instead of the diff tab |
+| **Center, Markdown tab**<br>`tkhwang-markdown` | a Markdown file clicked in Files or Changes, in a tab of its own with **View** \| **Diff** \| **Edit** in its header: formatted, what changed since the last commit, or its source, saved as you type and never over a change made meanwhile |
 | **Side panel, Git**<br>`git-graph` | a commit graph, or a Manygit list in a folder of repos |
 | **Terminal**<br>copy-on-select | copies a selection on mouse release |
 | **Theme**<br>Catppuccin | Mocha in dark mode, Latte in light mode, a `#60b9fc` accent |
 
-`tabs-dev`, `spaces-dev`, `changes-dev` and `files-dev` stay installed as fallbacks: put one back in the layout's tabs, spaces, changes or files block to switch. `files-dev` was the Files panel before `file-icons`; back in the files block, Files shows the folder Changes and Git show again, with the folder bar. `tabs-dev` was the tab bar before `better-tabs`, and what only it opens isn't reachable from `better-tabs`: the **Open with Zed** `+` menu (`herdr-open-with-zed`) and the Markdown icon with its `markdown-browser` tab (fed by `files-dev`). Its window switch moved out into `tkhwang-view-mode`; with `tabs-dev` back, take the layout's `view-mode` block out, or both switches fold windows.
+`tabs-dev`, `spaces-dev`, `changes-dev` and `files-dev` stay installed as fallbacks: put one back in the layout's tabs, spaces, changes or files block to switch. `files-dev` was the Files panel before `file-icons`; back in the files block, Files shows the folder Changes and Git show again, with the folder bar. `tabs-dev` was the tab bar before `better-tabs`, and what only it opens isn't reachable from `better-tabs`: the **Open with Zed** `+` menu (`herdr-open-with-zed`) and the Markdown icon, which opens the Markdown tab on the file `files-dev` or Changes is on. Its window switch moved out into `tkhwang-view-mode`; with `tabs-dev` back, take the layout's `view-mode` block out, or both switches fold windows.
 
 ## How this repo is organized
 
@@ -41,7 +42,7 @@ Other people's code and mine are kept apart, so it is always clear what I change
 | `upstream/<mod>.extra/` | theirs | single files taken into that mod from another repo (`navigation.js` from filipores/herdr-spaces-status; `lookup.js` and `icons.js` from file-icons) |
 | `patches/<mod>.patch` | mine | everything I changed in that mod, as one diff against its upstream |
 | `own/shared/` | mine | files several mods carry the same copy of: `panel-folder.js`, `markdown.js`, `ports.js`, `play.svg`, `pause.svg`, `stop.svg` |
-| `own/mods/<mod>/` | mine | mods written from scratch: `tkhwang-view-mode` |
+| `own/mods/<mod>/` | mine | mods written from scratch: `tkhwang-view-mode`, `tkhwang-markdown` |
 | `config/` | mine | `layouts/tkhwang-herdr.json`, `settings.json`, `keys.json` |
 | `licenses/<source>/` | theirs | each source's `LICENSE` and `NOTICE`, as shipped at the pinned commit; `NOTICE-<commit>` beside it while mods from one source are pinned at different commits |
 | `sources.json` | | where each mod comes from: repo, path, commit (and tag), license, extra files, shared files |
@@ -84,7 +85,7 @@ For a Herdr clone the ref is a Herdr version tag: `./sync.sh update agents-dev v
 
 ## Before you apply
 
-- **What runs, and what reaches the network.** `better-spaces` runs `git`, `hc` and `gh` (GitHub with your local `gh` login). The sparkle **Message** button in `better-changes` runs `claude -p`, so the staged diff goes to Anthropic through your Claude Code login, and its Push button runs `git push` with your git credentials. `git-graph` reaches the network only on Fetch, Pull, Push or deleting a remote branch, and asks GitHub's releases API once a day for a newer release. `markdown-browser` uses no network. `file-icons` runs `sh` to list folders and `git` to read status, on the space's machine, and uses no network.
+- **What runs, and what reaches the network.** `better-spaces` runs `git`, `hc` and `gh` (GitHub with your local `gh` login). The sparkle **Message** button in `better-changes` runs `claude -p`, so the staged diff goes to Anthropic through your Claude Code login, and its Push button runs `git push` with your git credentials. `git-graph` reaches the network only on Fetch, Pull, Push or deleting a remote branch, and asks GitHub's releases API once a day for a newer release. `markdown-browser` uses no network. `file-icons` runs `sh` to list folders and `git` to read status, on the space's machine, and uses no network. `tkhwang-markdown` runs `git` only to read (the Diff view, on the file's machine), writes only the file you edit in it, and uses no network.
 - **Workbranch wrappers.** In a folder of repos that is not a repo itself, `better-changes` and `changes-dev` show a repo picker, `git-graph` shows a Manygit list, and `better-spaces` and `agents-dev` name a workbranch task space (a `.workbranch.task` file beside its repos, or a folder of repos right under a project's `.workbranch.config` other than `_base`) after its repo with the branch under it when it holds one repo, and after its task folder when it holds several, since those repos are the same in every task; there `better-spaces` shows the project under the name and a repo's branch only when it isn't the task's (no PR status for a task folder). A plain folder of repos and a project's own folder keep their names.
 - **Theme picks.** A theme picked in Settings > Look is kept per layout in `layouts/.state/`; pick the Catppuccin themes there again if one was picked before.
 - **Command time limit.** Herdr stops a command after 30 s, so a slow fetch or push in `git-graph` can fail.
@@ -120,7 +121,7 @@ With `file-icons` in the Files block (it has no folder bar and follows the focus
 
 The shipped panels follow the focused pane, each on its own, so a click on a second or third pane, or the tab bar's view switch moving the focus, moved Files, Changes and Git to other folders. The three now show one folder for the shown tab, whatever has the focus: its main window's, the tab's first pane, which the tab bar's 1 shows.
 
-A folder bar under each panel's header has a chip for each folder the tab's panes are in, numbered by the first pane there and with its branch, and **Folder…**, which picks any folder on this machine in the system's folder picker (not in a space on another machine). The lit chip is the folder all three show. A click on another chip lights it in all three for that tab, until another pick: a picked pane is followed as it changes folder, and once it closes the main pane is back. Picks are kept by tab in the shared `panel-folder.picks`. The Changes diff tab and the Markdown viewer tab have no bar and keep the folder they were opened from.
+A folder bar under each panel's header has a chip for each folder the tab's panes are in, numbered by the first pane there and with its branch, and **Folder…**, which picks any folder on this machine in the system's folder picker (not in a space on another machine). The lit chip is the folder all three show. A click on another chip lights it in all three for that tab, until another pick: a picked pane is followed as it changes folder, and once it closes the main pane is back. Picks are kept by tab in the shared `panel-folder.picks`. The Changes diff tab and the Markdown tab have no bar and keep the folder they were opened from.
 
 Herdr can list an agent's terminal in a folder other than the one the agent works in; **Folder…** shows the right one then. It is one file, `own/shared/panel-folder.js`, that `sync.sh` copies into all three mods. Edit it in any of them in the app: `backup` takes it back, and stops if the three copies differ.
 
@@ -138,6 +139,25 @@ What a switch for the shown tab's main window, its first pane, and its secondary
 On their own the modes never touch a zoom done by hand, and a pane split in while a tab is folded stays in view; a click on any button, the lit one too, puts the shown tab in that mode (2 and 3 unzoom any pane). `herdr-app do tkhwang-view-mode.1` (or `2`, `3`; also `mobile`, `desktop`, `triple`) does what a click does, so a key in `keys.json` can too; none is bound. Another tab bar can have the switch by sending the same commands and lighting the shared mode.
 
 The mode, the panes 1 zoomed and the shells 2 put away are the shared `tkhwang-view-mode.view`, `tkhwang-view-mode.zoomed` and `tkhwang-view-mode.parked`; the first start takes over `tabs-dev`'s `tabs-dev.view*` once, so its mode and folds carry on. It looks at the shown tab right after each render instead of during it, so it never runs a command while the window draws.
+
+</details>
+
+<details>
+<summary><b><code>own/mods/tkhwang-markdown</code></b> · the Markdown tab: View | Diff | Edit</summary>
+
+**Marker:** `markdown tab`, in `file-icons`, `better-changes`, `files-dev` and `tabs-dev`, with `own/shared/markdown.js`
+
+A click on a Markdown file (`.md`, `.mdx`, `.markdown`) in Files (`file-icons`) or Changes (`better-changes`) shows it in the center, in a tab of its own named after the file, instead of Files' small read-only preview or the Changes diff tab. Each space has one such tab, reused in place: a click on another Markdown file switches it to that file and selects it. A file deleted in Changes still opens the diff tab, since there is nothing left to show or edit.
+
+The header, 44 px under the pane's own, shows the file's Material icon (from `file-icons`), its name over its folder (`~/…`, or `machine: folder` for a space on another machine), then **View** | **Diff** | **Edit** as one control with the shown mode lit, the saving state ("Edited", "Saving…", "Saved"; "Read only" for a file on another machine; "Too large to edit" past 400,000 characters), Read again and Close. A click in Files opens it on View, one in Changes on Diff; the header switches from there, as do `tkhwang-markdown.view`, `.diff`, `.edit` and `.save` (`herdr-app do`, or a key in `keys.json`; none is bound).
+
+- **View** draws the file formatted with Herdr's `TextView.markdown`, at most 920 px wide, selectable; YAML front matter shows as a `yaml` code block and MDX's top-level `import`/`export` lines are left out. It shows what is in Edit, saved or not. A link to another Markdown file opens it in the same tab; an `http(s)` link in the browser. Images and Mermaid aren't drawn (`TextView` doesn't).
+- **Diff** is what changed since the last commit: `git diff HEAD` of the file, in its folder on its machine, as one column with both line numbers, added lines green and removed red, and `+N −M` with the repository over it. A file Git doesn't have yet, or a repository with no commit, shows the whole file as added; a file outside a repository says there is nothing to compare it with. Cut to 3,000 lines of 4,000 characters.
+- **Edit** opens the whole file as Markdown source in Herdr's editor (line numbers, soft wrap). Its colors are partial: Herdr's editor (`syntax.rs`) turns only code scopes into colors, so the Markdown marks (`#`, `**`, `` ` ``, `-`, `>`, `[ ]( )`, fences) show in the theme's accent, a fence's language name and a link title in their own colors, and the text of headings, emphasis, inline and fenced code, and URLs plain. What you type is saved 0.7 s after you stop and on ⌘S (Ctrl+S elsewhere), with `writeTextFile` only over the file as it was last read; leaving Edit, showing another file and closing the tab save first. When the file changed on disk meanwhile (an agent wrote it), nothing is written: a bar says so, with **Keep mine** (writes yours over it) and **Take the file's** (drops yours); another file asked for meanwhile opens after you choose. A file on another machine can be read, not saved (`writeTextFile` writes here only).
+
+The file is read again whenever its folder changes (`watchFolder`), and every 3 s on another machine, so an agent writing it shows up as it writes; while you have unsaved text the change waits for your choice as above.
+
+`own/shared/markdown.js` opens the tab, and `file-icons`, `better-changes`, `files-dev` and `tabs-dev` carry the same copy: `showMarkdown({ file, on, cwd, mode })` opens or reuses the space's tab with `tab.new {mod: "tkhwang-markdown"}`, records it in the shared `markdown-tab.tabs` (`{ space: { tab, slot, cwd, on } }`) and what it shows in `tkhwang-markdown.show` (`{ slot: { file, on, mode, at } }`; a newer `at` is another click); `markdownTab(space)` and `markdownShown(space)` tell the panels which tab it is and which file it shows. While the tab is shown, Files, Changes and Git keep showing the folder the file was opened from (`cwd`), and Files lights the file's row.
 
 </details>
 
@@ -175,7 +195,7 @@ A tab with an agent in any of its panes is tinted yellow (`#facc15`), the color 
 
 A **Git** button beside Files and Changes opens `git-graph` in the same side panel (marked `git graph`; the panel's `graph` block is in `config/layouts/tkhwang-herdr.json`).
 
-A Markdown icon after **Git**, past a thin line (an icon alone, since it is used less than Files, Changes and Git; its tooltip names it), renders the Markdown file the open panel is on (Files' preview, or the file picked in Changes) in a `markdown-browser` tab in the center, one per space, switched in place on the next click and lit while that tab is shown; it stays dim until a Markdown file is picked (marked `markdown browser`; `markdown.js`, shared `markdown-tab.tabs`, `markdown-browser.show` and `markdown-browser.slots`).
+A Markdown icon after **Git**, past a thin line (an icon alone, since it is used less than Files, Changes and Git; its tooltip names it), shows the Markdown file the open panel is on (Files' preview, or the file picked in Changes) in the Markdown tab in the center (`tkhwang-markdown`, above), one per space, switched in place on the next click and lit while that tab is shown; it stays dim until a Markdown file is picked (marked `markdown browser`; `markdown.js`, shared `markdown-tab.tabs` and `tkhwang-markdown.show`). The icon is `markdown-browser`'s.
 
 Right of `+`, a [1] | [1|2] | [1|2/3] switch for a tab's main window, its first pane, and its secondary windows: each button is a small picture of the windows it shows, numbered as the folder bar numbers them. 1 zooms the main window so the secondary ones fold away, still running, and the file panel keeps its room, also when switching tabs and when an agent starting or ending in the shown tab changes whether it folds. 2 shows them side by side, and a click on 2 in a tab with only its main window splits it down the middle for a secondary shell in main's folder. 3 shows main and two secondary windows stacked on its right, and a click on 3 makes the ones a tab lacks: main alone is split down the middle, then the second window is split across for a third, each a shell in main's folder; a tab of two gets only the third, under its second window. Neither 2 nor 3 moves the windows a tab already has, so 3 gives the pictured shape only to a tab of main alone or of main and one window on its right: two windows stacked one over the other become three stacked. 2 puts a tab's third window away instead of closing it: its terminal keeps running without a pane (`terminal.park`), and 3 puts that same shell back under the second window (`terminal.keep`), so 3 → 2 → 3 keeps its history; a new one is made only when there is none to put back. A third window running an agent stays in view, since put away its status would leave the tab and the agent lists. Like 1's folding, putting away and back also happens when switching tabs, never on a split or an agent starting; closing a tab ends the shells put away from it. 1 folds a tab of main and one or two secondary windows (what 2 and 3 make), or one with more windows and an agent; one with more windows and no agent (`herdr-dev.sh`'s four-pane dev tab) keeps them all, on a click on 1 too, and a zoom 1 left there comes undone when it is shown. On their own the modes never touch a zoom done by hand, and a pane split in while a tab is folded stays in view. A click on any button, the lit one too, puts the shown tab in that mode: 2 and 3 unzoom any pane, and 1 folds a tab it folds (above) to its main window, moving a zoom done by hand (marked `view mode`; shared `tabs-dev.view`, `tabs-dev.view-zoomed` and `tabs-dev.view-parked`).
 
@@ -188,7 +208,7 @@ Right of `+`, a [1] | [1|2] | [1|2/3] switch for a tab's main window, its first 
 
 Replaced in the layout by `file-icons` and kept as the fallback: put `files-dev` back in the layout's `files` block to switch.
 
-Clone of the shipped Files panel (0.1.13). It publishes the file its preview shows as the shared `files-dev.shown`, so `tabs-dev`'s Markdown icon can render it (unused with `better-tabs`), and while that Markdown viewer tab is the shown one it keeps listing the folder the file came from instead of jumping to the space folder (marked `markdown tab`; `markdown.js` is the same file as in `tabs-dev`).
+Clone of the shipped Files panel (0.1.13). It publishes the file its preview shows as the shared `files-dev.shown`, so `tabs-dev`'s Markdown icon can show it (unused with `better-tabs`), and while the Markdown tab is the shown one it keeps listing the folder the file came from instead of jumping to the space folder (marked `markdown tab`; `markdown.js` is the same file as in `tabs-dev`).
 
 It lists the folder Changes and Git show too, with the folder bar under its header, instead of the focused pane's, and in the Changes diff tab it stays on the diff's repository (marked `panel folder`; `panel-folder.js`, below).
 
@@ -251,7 +271,7 @@ The panel and its diff tab take their look from the layout's `changes` block pro
 
 The sidebar passes them to the diff tab through the shared `better-changes.font` when the panel starts. Herdr's own font settings can't do this: the terminal and interface fonts and sizes are app-wide, and a `ui_font` on the block's node doesn't reach the mod.
 
-`markdown.js` (marked `markdown tab`, the same file as in `tabs-dev`) keeps the panel on the repo it was on while the Markdown viewer tab is shown. `changes-dev` stays installed: put it back in the layout's `changes` block to switch.
+A click on a Markdown file that is still on disk shows it in the Markdown tab (`tkhwang-markdown`, above) on Diff instead of the diff tab, its row lit as a pick; a deleted one keeps the diff tab. `markdown.js` (marked `markdown tab`, the same file as in `tkhwang-markdown`'s other users) opens it, and keeps the panel on the repo it was on while that tab is shown. `changes-dev` stays installed: put it back in the layout's `changes` block to switch.
 
 It reads the folder Files and Git show too, with the folder bar under its header, instead of the focused pane's; in a workbranch wrapper the repo picker stays under the folder bar (marked `panel folder`; `panel-folder.js`, below).
 
@@ -300,24 +320,28 @@ MIT ([`licenses/herdr-git-graph/LICENSE`](licenses/herdr-git-graph/LICENSE)); it
 <details>
 <summary><b><code>markdown-browser</code></b> · center tab · <a href="https://github.com/ohneda/herdr-markdown-browser">ohneda/herdr-markdown-browser</a> at <code>bb1f3c7</code>, <code>place</code> changed</summary>
 
-[ohneda/herdr-markdown-browser](https://github.com/ohneda/herdr-markdown-browser) at `bb1f3c7`: a native Markdown preview pane (Herdr's `TextView.markdown`, so no images or Mermaid), reloaded when the file changes, with a **Default app** button and `⌘⇧O` (its `mod:markdown-browser` section is merged into `keys.json`) for the system's default `.md` app. Used here only as the viewer `tabs-dev`'s Markdown icon opens, so nothing opens it while the layout uses `better-tabs`; its own Markdown list panel isn't in the layout. The one change: `mod.json` `place` is `none`, so it doesn't dock a column at the window's right edge.
+[ohneda/herdr-markdown-browser](https://github.com/ohneda/herdr-markdown-browser) at `bb1f3c7`: a native Markdown preview pane (Herdr's `TextView.markdown`, so no images or Mermaid), reloaded when the file changes, with a **Default app** button and `⌘⇧O` (its `mod:markdown-browser` section is merged into `keys.json`) for the system's default `.md` app. It was the viewer `tabs-dev`'s Markdown icon opened; the Markdown tab (`tkhwang-markdown`) took that over, so nothing opens it now. It stays installed for `markdown.svg`, the icon `tabs-dev`'s Markdown button draws; its own Markdown list panel isn't in the layout. The one change: `mod.json` `place` is `none`, so it doesn't dock a column at the window's right edge.
 
 It reads the previewed file and watches its folder; opening in the default app runs `sh` with `realpath` and `open`; its list (unused here) would run `git rev-parse`, `git ls-files` or `find`; no network. MIT ([`licenses/herdr-markdown-browser/LICENSE`](licenses/herdr-markdown-browser/LICENSE)). To update it, `./sync.sh update markdown-browser <commit>`; the `place` change is its whole patch.
+
+</details>
+
+<details>
+<summary><b><code>file-icons</code></b> · side panel, Files · <a href="https://github.com/LaiqianDS/herdr-mods/tree/main/file-icons">LaiqianDS/herdr-mods</a> at <code>eae0b91</code>, patched</summary>
+
+**Marker:** `markdown tab`
+
+[LaiqianDS/herdr-mods](https://github.com/LaiqianDS/herdr-mods/tree/main/file-icons) at `eae0b91`; from [cybertron288/herdr-mods](https://github.com/cybertron288/herdr-mods/tree/main/file-icons), with its icon lookup moved into `lookup.js`. In the layout's `files` block in place of `files-dev`: Herdr's Files panel with the icons of VS Code's [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme) 5.40.0 (1,184 SVGs in `icons/`, about 5 MB; light themes get the light variants). It lists the focused pane's folder as a tree opened one folder at a time, folders first and `.git` left out, at most 500 entries a folder and 5,000 in all; changed files carry a git letter (`A`, `M`, `D`, `U`); a click on a file shows its text read-only, with syntax colors, until **←**. It refreshes every 10 s, and on a change under the folder when it is on this computer.
+
+Patched so a click on a Markdown file shows it in the Markdown tab in the center (`tkhwang-markdown`, above) on View, instead of the read-only preview in the panel; its row is lit while that tab shows it, and while that tab is the shown one the tree stays on the folder the file came from instead of jumping to the space's folder (marked `markdown tab`; `markdown.js`, the same file as in `better-changes`).
+
+Its icons also show in Changes (`better-changes`' `file icons` reads them from `mods/file-icons/icons/`), so keep it installed. It runs `sh` to list a folder (`powershell` on Windows) and `git rev-parse` and `git status` (no optional locks), on the space's machine; it reads the files you click and uses no network. Its folder must keep the name `file-icons`: the icon paths are `mods/file-icons/icons/…` (`DIR` in `main.js` and `lookup.js`). MIT, © cybertron288 ([`licenses/file-icons/LICENSE`](licenses/file-icons/LICENSE)); the icons MIT, © Material Extensions (`upstream/file-icons/LICENSE-material-icon-theme.txt`); the panel is based on Herdr's own `files` mod, Apache-2.0 ([`licenses/herdr`](licenses/herdr)). When that repo moves on, `./sync.sh update file-icons <commit>`.
 
 </details>
 
 ### Open-source mods as they are
 
 `kind: oss` without a patch, and the `fetch` mod and themes, which aren't kept here.
-
-<details>
-<summary><b><code>file-icons</code></b> · side panel, Files · <a href="https://github.com/LaiqianDS/herdr-mods/tree/main/file-icons">LaiqianDS/herdr-mods</a> at <code>eae0b91</code>, unchanged</summary>
-
-[LaiqianDS/herdr-mods](https://github.com/LaiqianDS/herdr-mods/tree/main/file-icons) at `eae0b91`, unchanged; from [cybertron288/herdr-mods](https://github.com/cybertron288/herdr-mods/tree/main/file-icons), with its icon lookup moved into `lookup.js`. In the layout's `files` block in place of `files-dev`: Herdr's Files panel with the icons of VS Code's [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme) 5.40.0 (1,184 SVGs in `icons/`, about 5 MB; light themes get the light variants). It lists the focused pane's folder as a tree opened one folder at a time, folders first and `.git` left out, at most 500 entries a folder and 5,000 in all; changed files carry a git letter (`A`, `M`, `D`, `U`); a click on a file shows its text read-only, with syntax colors, until **←**. It refreshes every 10 s, and on a change under the folder when it is on this computer.
-
-Its icons also show in Changes (`better-changes`' `file icons` reads them from `mods/file-icons/icons/`), so keep it installed. It runs `sh` to list a folder (`powershell` on Windows) and `git rev-parse` and `git status` (no optional locks), on the space's machine; it reads the files you click and uses no network. Its folder must keep the name `file-icons`: the icon paths are `mods/file-icons/icons/…` (`DIR` in `main.js` and `lookup.js`). MIT, © cybertron288 ([`licenses/file-icons/LICENSE`](licenses/file-icons/LICENSE)); the icons MIT, © Material Extensions (`upstream/file-icons/LICENSE-material-icon-theme.txt`); the panel is based on Herdr's own `files` mod, Apache-2.0 ([`licenses/herdr`](licenses/herdr)). It has no patch yet: change it in the app, then `./sync.sh backup`. When that repo moves on, `./sync.sh update file-icons <commit>`.
-
-</details>
 
 <details>
 <summary><b><code>herdr-open-with-zed</code></b> · <code>+</code> menu · <a href="https://github.com/atleugim/herdr-open-with-zed">atleugim/herdr-open-with-zed</a> at <code>a15570e</code>, unchanged</summary>

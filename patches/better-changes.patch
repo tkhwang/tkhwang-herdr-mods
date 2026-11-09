@@ -1,12 +1,13 @@
 diff --git a/main.js b/main.js
-index a893bae..fcccadf 100644
+index a893bae..24365b2 100644
 --- a/main.js
 +++ b/main.js
-@@ -1,9 +1,31 @@
+@@ -1,9 +1,32 @@
 +// Changed from munza/herdr-mods@77d94f7: a repo picker for workbranch wrapper folders
 +// (code marked "wrapper repos"), a multi-line commit message box with the buttons under it
 +// (marked "commit box"), a button that asks an AI for the commit message (marked "ai message"),
-+// a Push button beside Commit (marked "push button"), the folder kept while the tab bar's Markdown viewer tab is shown (marked "markdown tab", with
++// a Push button beside Commit (marked "push button"), a Markdown file opened in the space's Markdown tab (tkhwang-markdown,
++// on Diff) instead of the diff tab, and the folder kept while that tab is shown (marked "markdown tab", with
 +// markdown.js), the folder Files and Git show too, with the folder bar under the header (marked "panel folder", with
 +// panel-folder.js), the panel and its diff tab in the font, size and line height the layout's Changes
 +// block sets (marked "changes font", with typography.js), file and folder icons from file-icons' Material
@@ -28,7 +29,7 @@ index a893bae..fcccadf 100644
 +  listRowHeight,
 +} from "./typography.js";
 +import { changedFiles, fileTree, diffRows, splitDiffRows, aiPrompt, aiMessage } from "./model.js";
-+import { markdownTab } from "./markdown.js"; // markdown tab
++import { MARKDOWN, markdownTab, showMarkdown } from "./markdown.js"; // markdown tab
 +import { panelFolder, folderBar } from "./panel-folder.js"; // panel folder
 +// file icons: a copy of file-icons' lookup (a mod can't import another's files); the SVGs it names
 +// are read from the installed file-icons mod, so that mod has to be installed too.
@@ -38,7 +39,7 @@ index a893bae..fcccadf 100644
  import {
    spaces,
    panes,
-@@ -18,8 +40,14 @@ import {
+@@ -18,8 +41,14 @@ import {
    run,
    layout,
    nextCommand,
@@ -53,7 +54,7 @@ index a893bae..fcccadf 100644
  // Status polling must not take optional index locks or trigger filesystem-monitor
  // helpers. Diff reads also disable external diff/textconv helpers at the call site.
  const READ_ONLY_GIT_OPTIONS = [
-@@ -29,6 +57,11 @@ const READ_ONLY_GIT_OPTIONS = [
+@@ -29,6 +58,11 @@ const READ_ONLY_GIT_OPTIONS = [
    "-c",
    "diff.autoRefreshIndex=false",
  ];
@@ -65,7 +66,7 @@ index a893bae..fcccadf 100644
  const MAX_FILES = 1000;
  const MAX_DIFF_LINES = 1500;
  const MAX_LINE_LENGTH = 4000;
-@@ -36,26 +69,62 @@ const CONTEXT_POLL_MS = 300;
+@@ -36,26 +70,62 @@ const CONTEXT_POLL_MS = 300;
  const STATUS_POLL_MS = 10000;
  const TAB_OPEN_TIMEOUT_MS = 1500;
  
@@ -107,13 +108,13 @@ index a893bae..fcccadf 100644
      const source = (shared("better-changes.diff-tabs") ?? {})[space?.id]?.source;
 -    if (source) return source;
 +    if (source) return { loc: source, diffTab: true };
-+  }
+   }
 +  // markdown tab: the Markdown viewer tab has no terminal either; stay where it was opened from
 +  // (diffTab: a wrapper's repo keeps its bar, as for a diff tab).
 +  if (!candidates.length) {
 +    const md = markdownTab(space?.id);
 +    if (md && md.tab === tab && md.cwd) return { loc: { cwd: md.cwd, on: md.on ?? null }, diffTab: true };
-   }
++  }
 +  // panel folder: the tab's main pane, or the pane or folder picked for the tab, never just
 +  // the focused pane: the panel holds still as the focus moves, and shows what Files and Git show.
 +  const shown = panelFolder();
@@ -138,7 +139,7 @@ index a893bae..fcccadf 100644
  // One View class serves two roles: a sidebar and a regular diff tab. Each copy
  // owns its local state; shared("better-changes.*") connects the separate copies.
  export default class Changes extends View {
-@@ -72,20 +141,30 @@ export default class Changes extends View {
+@@ -72,20 +142,30 @@ export default class Changes extends View {
        (localStorage.getItem("better-changes.diff-layout") === "split" ? "split" : "inline");
      if (this.mode === "sidebar" || !shared("better-changes.diff-layout"))
        setShared("better-changes.diff-layout", this.diffLayout);
@@ -171,7 +172,7 @@ index a893bae..fcccadf 100644
      this.startPolling(cx);
      this.listenForCommands(cx);
      this.refresh(cx);
-@@ -168,7 +247,63 @@ export default class Changes extends View {
+@@ -168,7 +248,63 @@ export default class Changes extends View {
        ? ((shared("better-changes.diff-tabs") ?? {})[this.diffSpace]?.source ??
            this.source ??
            location())
@@ -236,7 +237,7 @@ index a893bae..fcccadf 100644
    }
  
    // Include both cwd and machine: identical paths on different machines are
-@@ -213,6 +348,8 @@ export default class Changes extends View {
+@@ -213,6 +349,8 @@ export default class Changes extends View {
        this.error = null;
        this.note = null;
        this.watched = null;
@@ -245,7 +246,7 @@ index a893bae..fcccadf 100644
        this.message = "";
        this.input.set_value("");
      }
-@@ -224,6 +361,23 @@ export default class Changes extends View {
+@@ -224,6 +362,23 @@ export default class Changes extends View {
          const top = await this.git(["rev-parse", "--show-toplevel"], cwd, on);
          if (context !== this.contextKey()) return;
          if (top.code !== 0) {
@@ -269,7 +270,7 @@ index a893bae..fcccadf 100644
            this.root = null;
            this.files = [];
            this.rows = [];
-@@ -249,7 +403,20 @@ export default class Changes extends View {
+@@ -249,7 +404,20 @@ export default class Changes extends View {
          ];
          for (const stat of stats)
            if (stat.code !== 0) throw Error(stat.stderr || "Cannot read change statistics");
@@ -290,7 +291,7 @@ index a893bae..fcccadf 100644
          const files = changedFiles(
            status.stdout,
            stats.map((r) => r.stdout),
-@@ -269,14 +436,72 @@ export default class Changes extends View {
+@@ -269,14 +437,72 @@ export default class Changes extends View {
            if (this.path && !this.diffLoading) this.loadDiff(cx);
          }
        } catch (error) {
@@ -364,7 +365,27 @@ index a893bae..fcccadf 100644
    watch(root, cx) {
      if (this.on || this.watched === root) return;
      this.watched = root;
-@@ -580,6 +805,130 @@ export default class Changes extends View {
+@@ -304,10 +530,18 @@ export default class Changes extends View {
+       scope,
+       at: Date.now(),
+     };
++    const source = JSON.parse(this.context);
++    // markdown tab: a Markdown file still on disk opens in the space's Markdown tab, on Diff, where
++    // View and Edit are a click away; a deleted one keeps the diff tab. The pick still lights its row.
++    if (MARKDOWN.test(file.path) && file.status !== "D" && this.root) {
++      setShared("better-changes.selection", selected);
++      showMarkdown({ file: `${this.root}/${file.path}`, on: this.on ?? null, cwd: source.cwd, mode: "diff" }, cx);
++      cx.notify();
++      return;
++    }
+     const entries = shared("better-changes.diff-tabs") ?? {};
+     const old = entries[space.id];
+     const tab = this.diffTab(space.id);
+-    const source = JSON.parse(this.context);
+     const name = file.path.split("/").pop();
+     // Publish before opening/selecting the tab so its View sees the latest pick.
+     // A pending timestamp prevents rapid clicks from creating duplicate tabs.
+@@ -580,6 +814,130 @@ export default class Changes extends View {
        }
      });
    }
@@ -495,7 +516,7 @@ index a893bae..fcccadf 100644
    // ── Shared controls and file rows ─────────────────────────────────────────
  
    icon(id, asset, label, action, t, active = false, disabled = false, size = 24) {
-@@ -615,7 +964,7 @@ export default class Changes extends View {
+@@ -615,7 +973,7 @@ export default class Changes extends View {
      const selected = this.currentSelection();
      return h_flex()
        .id(`change-${scope}-${file.path}`)
@@ -504,7 +525,7 @@ index a893bae..fcccadf 100644
        .flex_none()
        .pl(8 + depth * 14)
        .pr(8)
-@@ -632,7 +981,7 @@ export default class Changes extends View {
+@@ -632,7 +990,7 @@ export default class Changes extends View {
        .hover((s) => s.bg(t.hover))
        .tooltip(file.path)
        .on_click((_e, cx) => this.pick(file, cx, scope))
@@ -513,7 +534,7 @@ index a893bae..fcccadf 100644
        .child(div().flex_1().min_w(0).truncate().child(name))
        .when(flat && parts.length > 0, (el) =>
          el.child(
-@@ -722,6 +1071,8 @@ export default class Changes extends View {
+@@ -722,6 +1080,8 @@ export default class Changes extends View {
  
    render() {
      const t = theme();
@@ -522,7 +543,7 @@ index a893bae..fcccadf 100644
      const root = v_flex()
        .size_full()
        .min_h(0)
-@@ -731,17 +1082,76 @@ export default class Changes extends View {
+@@ -731,17 +1091,76 @@ export default class Changes extends View {
        .border_color(t.border)
        .bg(t.background)
        .text_color(t.foreground)
@@ -600,7 +621,7 @@ index a893bae..fcccadf 100644
    renderSidebarHeader(t) {
      const head = h_flex()
        .h(44)
-@@ -892,7 +1302,7 @@ export default class Changes extends View {
+@@ -892,7 +1311,7 @@ export default class Changes extends View {
      const chevron = this.closed.has(closedKey) ? "chevron-right" : "chevron-down";
      return h_flex()
        .id(`changes-folder-${scope}-${row.path}`)
@@ -609,7 +630,7 @@ index a893bae..fcccadf 100644
        .pl(8 + row.depth * 14)
        .gap(6)
        .flex_none()
-@@ -906,16 +1316,123 @@ export default class Changes extends View {
+@@ -906,16 +1325,123 @@ export default class Changes extends View {
          cx.notify();
        })
        .child(svg(`mods/better-changes/${chevron}.svg`).size(10).text_color(t.dim))
@@ -736,7 +757,7 @@ index a893bae..fcccadf 100644
        this.stagedCount &&
        !this.conflicts,
      );
-@@ -925,53 +1442,65 @@ export default class Changes extends View {
+@@ -925,53 +1451,65 @@ export default class Changes extends View {
        .flex_none()
        .border_t(1)
        .border_color(t.border)
@@ -824,7 +845,7 @@ index a893bae..fcccadf 100644
            ),
        );
    }
-@@ -999,7 +1528,11 @@ export default class Changes extends View {
+@@ -999,7 +1537,11 @@ export default class Changes extends View {
        .flex_none()
        .border_b(1)
        .border_color(t.border)
@@ -837,7 +858,7 @@ index a893bae..fcccadf 100644
        .child(
          div()
            .flex_1()
-@@ -1061,7 +1594,7 @@ export default class Changes extends View {
+@@ -1061,7 +1603,7 @@ export default class Changes extends View {
        root.child(
          div().p(14).text_color(t.dim).child("Select a changed file in Changes to view its diff."),
        );
@@ -846,7 +867,7 @@ index a893bae..fcccadf 100644
      const split = this.diffLayout === "split";
      if (split)
        root.child(
-@@ -1117,11 +1650,12 @@ export default class Changes extends View {
+@@ -1117,11 +1659,12 @@ export default class Changes extends View {
      }
      const rows = split ? this.pairedRows : this.rows;
      const listId = `factory-diff-${this.context}-${this.path}-${this.scope}-${this.diffLayout}`;
