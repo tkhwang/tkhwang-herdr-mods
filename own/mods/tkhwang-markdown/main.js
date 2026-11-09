@@ -79,6 +79,8 @@ export default class MarkdownTab extends View {
     this.big = false;
     this.error = null;
     this.saving = false;
+    /** @type {string | null} */
+    this.writing = null; // the text a save is putting on disk, until writeTextFile returns
     this.again = false;
     this.seq = 0;
     this.savedAt = null;
@@ -109,7 +111,9 @@ export default class MarkdownTab extends View {
           return;
         }
         this.error = null;
-        if (text === this.saved) return;
+        // This tab's own save can land, and wake the watch, before writeTextFile returns: that
+        // isn't a change made under you, and write() records it as saved once it returns.
+        if (text === this.saved || text === this.writing) return;
         // The file now holds what you typed (saved elsewhere, or by the same edit): nothing to choose.
         if (this.dirty && text === this.text) {
           this.saved = text;
@@ -204,6 +208,7 @@ export default class MarkdownTab extends View {
     const text = this.text;
     const expected = this.saved;
     this.saving = true;
+    this.writing = text;
     cx.notify();
     let ok = false;
     try {
@@ -226,6 +231,7 @@ export default class MarkdownTab extends View {
     } finally {
       if (gen === this.gen) {
         this.saving = false;
+        this.writing = null;
         if (this.again) {
           this.again = false;
           if (!this.conflict) this.save(cx);
