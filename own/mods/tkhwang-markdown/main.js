@@ -81,6 +81,7 @@ export default class MarkdownTab extends View {
     this.saving = false;
     /** @type {string | null} */
     this.writing = null; // the text a save is putting on disk, until writeTextFile returns
+    this.flight = null; // that writeTextFile call, which closing waits for
     this.again = false;
     this.seq = 0;
     this.savedAt = null;
@@ -128,8 +129,7 @@ export default class MarkdownTab extends View {
         this.saved = text;
         this.text = text;
         this.big = text.length > MAX_TEXT;
-        if (this.editor && this.editor.value() !== text) this.editor.set_value(text);
-        if (this.mode === "edit") this.ensureEditor();
+        this.showInEditor(text);
         if (this.mode === "diff") this.loadDiff(cx);
       } catch (error) {
         if (gen === this.gen) this.error = `Cannot read this file: ${error?.message ?? error}`;
@@ -162,6 +162,7 @@ export default class MarkdownTab extends View {
   ensureEditor() {
     if (this.editor || this.text === null) return;
     const t = theme();
+    this.editorReadonly = !this.canEdit;
     this.editor = EditorState.new({
       language: "markdown",
       value: this.text,
@@ -174,6 +175,18 @@ export default class MarkdownTab extends View {
       syntax: { keyword: t.ansi5, string: t.ansi2, comment: t.dim, function: t.ansi4, type: t.ansi3, number: t.ansi1, constant: t.ansi6, punctuation: t.accent },
     });
     this.editor.on("change", (_e, cx) => this.changed(cx));
+  }
+
+  // Puts the file's new text in the editor. Its read-only setting is fixed when it is made, so it
+  // is made again when that changes (the file crossed the size limit).
+  /** @param {string} text */
+  showInEditor(text) {
+    if (this.editor && this.editorReadonly !== !this.canEdit) {
+      this.editor.release();
+      this.editor = null;
+    }
+    if (this.editor && this.editor.value() !== text) this.editor.set_value(text);
+    if (this.mode === "edit") this.ensureEditor();
   }
 
   changed(cx) {
@@ -212,7 +225,8 @@ export default class MarkdownTab extends View {
     cx.notify();
     let ok = false;
     try {
-      await writeTextFile(file, text, expected);
+      this.flight = writeTextFile(file, text, expected);
+      await this.flight;
       if (gen === this.gen) {
         this.saved = text;
         this.savedAt = Date.now();
@@ -232,6 +246,7 @@ export default class MarkdownTab extends View {
       if (gen === this.gen) {
         this.saving = false;
         this.writing = null;
+        this.flight = null;
         if (this.again) {
           this.again = false;
           if (!this.conflict) this.save(cx);
@@ -260,7 +275,7 @@ export default class MarkdownTab extends View {
     this.conflict = false;
     this.disk = null;
     this.seq++;
-    if (this.editor) this.editor.set_value(disk);
+    this.showInEditor(disk);
     if (this.mode === "diff") this.loadDiff(cx);
     cx.notify();
   }
@@ -315,7 +330,9 @@ export default class MarkdownTab extends View {
   }
 
   // A newer click (another file, or another mode): yours is saved first. While a conflict is open
-  // the tab stays on this file; it moves once that is settled.
+  // the tab stays on this file; it moves once that is settled. Text typed while that save runs is
+  // still unsaved: render() asks again once it is saved. A save that fails drops the click, so the
+  // text that couldn't be saved stays on screen.
   async follow(cx) {
     const entry = this.entry();
     if (!entry || entry.at === this.applied) return;
@@ -325,7 +342,7 @@ export default class MarkdownTab extends View {
       return;
     }
     if (this.dirty && !(await this.write(cx))) {
-      if (!this.conflict) this.applied = entry.at;
+      if (!this.conflict && (this.error || !this.canEdit)) this.applied = entry.at;
       return;
     }
     this.applied = entry.at;
@@ -338,9 +355,11 @@ export default class MarkdownTab extends View {
     if (record) run("tab.close", { id: record.tab });
   }
 
-  // Closing the tab keeps what you typed.
+  // Closing the tab keeps what you typed. A save still landing goes first, so yours is written over
+  // that text, not refused for expecting the text before it.
   async close() {
     this.closed = true;
+    if (this.flight) await this.flight.catch(() => {});
     if (this.dirty && this.canEdit && !this.conflict) {
       try {
         await writeTextFile(this.file, this.text, this.saved);
