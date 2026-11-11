@@ -28,7 +28,8 @@ for tool in jq git rsync curl shasum; do command -v "$tool" >/dev/null 2>&1 || d
 
 TMP="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/herdr-mods.XXXXXX")" && pwd -P)"
 stage=""
-cleanup() { rm -rf "$TMP"; if [ -n "$stage" ]; then rm -rf "$stage"; fi; }
+# A second Ctrl-C would cut the removal short and leave half a stage beside the app folder.
+cleanup() { trap '' INT TERM HUP; rm -rf "$TMP"; if [ -n "$stage" ]; then rm -rf "$stage"; fi; }
 trap cleanup EXIT
 
 # ── sources.json ──────────────────────────────────────────────────────────────
@@ -196,8 +197,12 @@ apply() {
     changed="$changed $m"
   done < <(fetched_mods)
   # Every changed mod is checked before any goes in, so one the check rejects changes nothing.
+  # Right after a restart the first check can take minutes, so each one names its mod first.
   if command -v herdr-app >/dev/null 2>&1; then
-    for m in $changed; do herdr-app check "$stage/mods/$m" || die "herdr-app check rejected mods/$m; nothing was installed"; done
+    for m in $changed; do
+      echo "checking mods/$m"
+      herdr-app check "$stage/mods/$m" || die "herdr-app check rejected mods/$m; nothing was installed"
+    done
   fi
   for m in $changed; do swap "mods/$m"; echo "installed mods/$m"; done
   # Themes go in before the config, so the layout never names a missing one.
