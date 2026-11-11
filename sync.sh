@@ -23,7 +23,20 @@ work="$here/work"
 # Files the app writes into every mod folder.
 EXCLUDE=(--exclude '*.d.ts' --exclude jsconfig.json --exclude .DS_Store)
 
-die() { echo "$*" >&2; exit 1; }
+# Marks on what a run prints: [*] news along the way, [+] something done, [-] something wrong.
+# A mark is colored when its own line goes to a terminal (stderr for die), unless NO_COLOR is
+# set (no-color.org) or TERM is dumb.
+mark() { # color mark message
+  if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != dumb ]; then
+    printf '\033[%sm%s\033[0m %s\n' "$1" "$2" "$3"
+  else
+    printf '%s %s\n' "$2" "$3"
+  fi
+}
+info() { mark '1;34' '[*]' "$*"; }
+ok() { mark '1;32' '[+]' "$*"; }
+bad() { mark '1;31' '[-]' "$*"; }
+die() { bad "$*" >&2; exit 1; }
 for tool in jq git rsync curl shasum; do command -v "$tool" >/dev/null 2>&1 || die "needs $tool"; done
 
 TMP="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/herdr-mods.XXXXXX")" && pwd -P)"
@@ -120,8 +133,8 @@ backup() {
       cp "$live/mods/$m/$f" "$TMP/shared/$f"
     done < <(users_of "$f")
     if [ "$(echo $versions | wc -w)" -gt 1 ]; then
-      echo "$f differs between the mods that share it:" >&2
-      users_of "$f" | while IFS= read -r m; do echo "  $(shasum -a 256 "$live/mods/$m/$f" | cut -c1-12)  mods/$m/$f" >&2; done
+      bad "$f differs between the mods that share it:" >&2
+      users_of "$f" | while IFS= read -r m; do echo "    $(shasum -a 256 "$live/mods/$m/$f" | cut -c1-12)  mods/$m/$f" >&2; done
       die "make the copies the same in the app, then back up again"
     fi
   done < <(all_shared)
@@ -143,7 +156,7 @@ backup() {
     mkdir -p "$here/config/$(dirname "$f")"
     cp "$live/$f" "$here/config/$f"
   done < <(q '.config[]')
-  echo "backed up $live -> $here"
+  ok "backed up $live -> $here"
   git -C "$here" status --short -- . || true
 }
 
@@ -154,7 +167,7 @@ stash() {
   local dest="$live.bak-$stamp/$1"
   mkdir -p "$(dirname "$dest")"
   mv "$live/$1" "$dest"
-  echo "  backed up $1 -> $dest"
+  info "backed up $1 -> $dest"
 }
 
 # Moves the staged copy of `path` into place, stashing the live one. Both moves stay on one disk.
@@ -176,7 +189,7 @@ apply() {
   stage="$(mktemp -d "$live.new-XXXXXX")"
   mkdir -p "$stage/mods"
   while IFS= read -r m; do
-    if [ -d "$live/mods/$m" ] && same_tree "$TMP/mods/$m" "$live/mods/$m"; then echo "same: mods/$m"; continue; fi
+    if [ -d "$live/mods/$m" ] && same_tree "$TMP/mods/$m" "$live/mods/$m"; then info "same: mods/$m"; continue; fi
     rsync -a "$TMP/mods/$m/" "$stage/mods/$m/"
     changed="$changed $m"
   done < <(built_mods)
@@ -188,7 +201,7 @@ apply() {
     path="$(q --arg m "$m" '.mods[$m].upstream.path')"
     local whole=1
     while IFS= read -r f; do [ -f "$live/mods/$m/$f" ] || whole=0; done < <(q --arg m "$m" '.mods[$m].upstream.files[]')
-    if [ "$whole" = 1 ] && [ "$(cat "$live/mods/$m/.revision" 2>/dev/null)" = "$commit" ]; then echo "same: mods/$m"; continue; fi
+    if [ "$whole" = 1 ] && [ "$(cat "$live/mods/$m/.revision" 2>/dev/null)" = "$commit" ]; then info "same: mods/$m"; continue; fi
     mkdir -p "$stage/mods/$m"
     while IFS= read -r f; do
       curl -fsSL "$(raw "$repo" "$commit" "$path/$f")" -o "$stage/mods/$m/$f" || die "could not fetch $m/$f from $repo"
@@ -200,29 +213,29 @@ apply() {
   # Right after a restart the first check can take minutes, so each one names its mod first.
   if command -v herdr-app >/dev/null 2>&1; then
     for m in $changed; do
-      echo "checking mods/$m"
+      info "checking mods/$m"
       herdr-app check "$stage/mods/$m" || die "herdr-app check rejected mods/$m; nothing was installed"
     done
   fi
-  for m in $changed; do swap "mods/$m"; echo "installed mods/$m"; done
+  for m in $changed; do swap "mods/$m"; ok "installed mods/$m"; done
   # Themes go in before the config, so the layout never names a missing one.
   while IFS=$'\t' read -r repo commit path sum; do
     f="themes/$(basename "$path")"
-    if [ -f "$live/$f" ] && [ "$(shasum -a 256 "$live/$f" | cut -d' ' -f1)" = "$sum" ]; then echo "same: $f"; continue; fi
+    if [ -f "$live/$f" ] && [ "$(shasum -a 256 "$live/$f" | cut -d' ' -f1)" = "$sum" ]; then info "same: $f"; continue; fi
     mkdir -p "$stage/themes"
     curl -fsSL "$(raw "$repo" "$commit" "$path")" -o "$stage/$f" || die "could not fetch $f from $repo"
     [ "$(shasum -a 256 "$stage/$f" | cut -d' ' -f1)" = "$sum" ] || die "$f from $repo does not match its pinned sha256"
     swap "$f"
-    echo "installed $f ($repo@${commit:0:7})"
+    ok "installed $f ($repo@${commit:0:7})"
   done < <(q '.themes[] | [.repo, .commit, .path, .sha256] | @tsv')
   while IFS= read -r f; do
-    if [ -f "$live/$f" ] && cmp -s "$here/config/$f" "$live/$f"; then echo "same: $f"; continue; fi
+    if [ -f "$live/$f" ] && cmp -s "$here/config/$f" "$live/$f"; then info "same: $f"; continue; fi
     mkdir -p "$stage/$(dirname "$f")"
     cp "$here/config/$f" "$stage/$f"
     swap "$f"
-    echo "installed $f"
+    ok "installed $f"
   done < <(q '.config[]')
-  echo "restart Herdr if a mod folder was new, then pick the layout with ⌘⇧L"
+  info "restart Herdr if a mod folder was new, then pick the layout with ⌘⇧L"
 }
 
 # ── status ────────────────────────────────────────────────────────────────────
@@ -305,7 +318,7 @@ update() {
     git -C "$TMP/repo" fetch -q --tags origin || die "could not fetch $repo"
     commit="$(git -C "$TMP/repo" rev-parse --verify -q "$ref^{commit}" || git -C "$TMP/repo" rev-parse --verify -q "origin/$ref^{commit}")" || die "$repo has no $ref"
   fi
-  if [ "$commit" = "$(q --arg m "$m" '.mods[$m].upstream.commit')" ]; then echo "$m is already on $repo@${commit:0:7}"; return; fi
+  if [ "$commit" = "$(q --arg m "$m" '.mods[$m].upstream.commit')" ]; then info "$m is already on $repo@${commit:0:7}"; return; fi
   mkdir -p "$work/$m.upstream"
   if ! git -C "$TMP/repo" archive "$commit" "$path" 2>/dev/null | tar -x -C "$work/$m.upstream" --strip-components="$depth" ||
     [ -z "$(ls -A "$work/$m.upstream")" ]; then
@@ -320,9 +333,9 @@ update() {
   build_mod "$m" "$TMP/mine" noshared
   conflicts="$(merge_trees "$TMP/old" "$TMP/mine" "$TMP/new" "$work/$m")"
   if [ -z "$conflicts" ]; then finish_update "$m"; return; fi
-  echo "$m: my patch doesn't go onto $repo@${commit:0:7} by itself. Fix these in work/$m/:"
-  printf '%s\n' "$conflicts" | sed 's/^/  /'
-  echo "then run ./sync.sh update $m --continue"
+  bad "$m: my patch doesn't go onto $repo@${commit:0:7} by itself. Fix these in work/$m/:"
+  printf '%s\n' "$conflicts" | sed 's/^/    /'
+  info "then run ./sync.sh update $m --continue"
 }
 
 finish_update() { # mod
@@ -339,11 +352,11 @@ finish_update() { # mod
     "$src" >"$TMP/sources.json"
   mv "$TMP/sources.json" "$src"
   rm -rf "${work:?}/${m:?}" "${work:?}/${m:?}.ref"
-  echo "$m is on $(origin_of "$m") with my patch on top. ./sync.sh apply installs it; check it in the app."
+  ok "$m is on $(origin_of "$m") with my patch on top. ./sync.sh apply installs it; check it in the app."
 }
 
 case "${1:-}" in
-  build) build_all "$here/build/mods"; echo "built $(built_mods | wc -l | tr -d ' ') mods into build/mods" ;;
+  build) build_all "$here/build/mods"; ok "built $(built_mods | wc -l | tr -d ' ') mods into build/mods" ;;
   apply) apply ;;
   backup) backup ;;
   status) status ;;
