@@ -893,10 +893,10 @@ index c29d7a3..10499d8 100644
    "title": "Better Changes"
  }
 diff --git a/model.js b/model.js
-index 05eda0e..fd354f8 100644
+index 05eda0e..810cf35 100644
 --- a/model.js
 +++ b/model.js
-@@ -153,3 +153,59 @@ export function splitDiffRows(rows) {
+@@ -153,3 +153,66 @@ export function splitDiffRows(rows) {
    flushReplacement();
    return paired;
  }
@@ -926,6 +926,7 @@ index 05eda0e..fd354f8 100644
 +        recent.map((m) => m.split("\n").map((l) => `  ${l}`).join("\n")).join("\n  ---\n")
 +      : "- Use the Conventional Commits form, type(scope): summary, in English, with a short body after one blank line only when the change needs explaining.",
 +    "- Say what the change does and why, not which files changed. Wrap body lines at 72 characters.",
++    "- Add no trailers or attribution: no Co-Authored-By, Signed-off-by or \"Generated with\" lines.",
 +    branch ? `Branch: ${branch}` : null,
 +    "Changed files:",
 +    stat.trim() || "(none)",
@@ -937,13 +938,19 @@ index 05eda0e..fd354f8 100644
 +}
 +
 +// The model's answer as a commit message: code fences and a "Subject:" label dropped, quotes
-+// around the subject removed, runs of blank lines folded to one.
++// around the subject removed, runs of blank lines folded to one. An AI attribution line
++// (Co-Authored-By Claude or another AI, "Generated with Claude Code") is dropped too, since
++// Claude Code adds one by habit (marked `no ai trailer`).
++const AI_TRAILER =
++  /^(co-authored-by:.*\b(claude|anthropic|openai|codex|chatgpt|gpt|grok|xai|gemini|copilot)\b.*|.*generated (with|by) .*\b(claude|codex|grok|gemini|copilot)\b.*)$/i;
++
 +export function aiMessage(text) {
 +  const lines = String(text ?? "")
 +    .replace(/\r/g, "")
 +    .split("\n")
 +    .map((l) => l.trimEnd())
-+    .filter((l) => !l.trim().startsWith("```"));
++    .filter((l) => !l.trim().startsWith("```"))
++    .filter((l) => !AI_TRAILER.test(l.trim()));
 +  while (lines.length && !lines[0].trim()) lines.shift();
 +  if (lines.length)
 +    lines[0] = lines[0]
