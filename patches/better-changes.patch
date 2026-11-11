@@ -893,10 +893,10 @@ index c29d7a3..10499d8 100644
    "title": "Better Changes"
  }
 diff --git a/model.js b/model.js
-index 05eda0e..fd354f8 100644
+index 05eda0e..18134f7 100644
 --- a/model.js
 +++ b/model.js
-@@ -153,3 +153,59 @@ export function splitDiffRows(rows) {
+@@ -153,3 +153,71 @@ export function splitDiffRows(rows) {
    flushReplacement();
    return paired;
  }
@@ -926,6 +926,7 @@ index 05eda0e..fd354f8 100644
 +        recent.map((m) => m.split("\n").map((l) => `  ${l}`).join("\n")).join("\n  ---\n")
 +      : "- Use the Conventional Commits form, type(scope): summary, in English, with a short body after one blank line only when the change needs explaining.",
 +    "- Say what the change does and why, not which files changed. Wrap body lines at 72 characters.",
++    "- Add no trailers or attribution: no Co-Authored-By, Signed-off-by or \"Generated with\" lines.",
 +    branch ? `Branch: ${branch}` : null,
 +    "Changed files:",
 +    stat.trim() || "(none)",
@@ -937,13 +938,24 @@ index 05eda0e..fd354f8 100644
 +}
 +
 +// The model's answer as a commit message: code fences and a "Subject:" label dropped, quotes
-+// around the subject removed, runs of blank lines folded to one.
++// around the subject removed, runs of blank lines folded to one. An AI attribution line below
++// the subject is dropped too, since Claude Code adds one by habit (marked `no ai trailer`): a
++// Co-Authored-By with an AI's own address (Claude's noreply@anthropic.com, OpenAI's, a
++// Copilot, Claude, Codex or Gemini GitHub account), or a line that starts with "Generated
++// with/by" an AI. A person's Co-Authored-By is matched by neither, whatever the name or domain.
++const AI_COAUTHOR =
++  /^co-authored-by:.*[\s<]((noreply|codex)@(anthropic|openai)\.com|(\d+\+)?(copilot|claude|codex|gemini)[\w-]*(\[bot\])?@users\.noreply\.github\.com)>?$/i;
++const AI_GENERATED = /^[^\p{L}\p{N}]*generated (with|by) \[?(claude|chatgpt|openai|codex|grok|gemini|copilot)\b/iu;
++const aiTrailer = (l) => AI_COAUTHOR.test(l.trim()) || AI_GENERATED.test(l.trim());
++
 +export function aiMessage(text) {
-+  const lines = String(text ?? "")
++  let lines = String(text ?? "")
 +    .replace(/\r/g, "")
 +    .split("\n")
 +    .map((l) => l.trimEnd())
 +    .filter((l) => !l.trim().startsWith("```"));
++  const subject = lines.findIndex((l) => l.trim());
++  lines = lines.filter((l, i) => i <= subject || !aiTrailer(l));
 +  while (lines.length && !lines[0].trim()) lines.shift();
 +  if (lines.length)
 +    lines[0] = lines[0]
