@@ -171,15 +171,15 @@
     <line x1="326" y1="277" x2="810" y2="277" stroke="#cdd6f4" stroke-opacity="0.08"/>
     <g class="m" font-size="17">
       <text x="342" y="308"><tspan fill="#60b9fc">$</tspan><tspan fill="#cdd6f4"> ./sync.sh apply</tspan></text>
-      <text x="342" y="336"><tspan fill="#a6e3a1">installed</tspan><tspan fill="#a6adc8"> mods/agents-dev</tspan></text>
-      <text x="342" y="362"><tspan fill="#a6e3a1">installed</tspan><tspan fill="#a6adc8"> mods/better-spaces</tspan></text>
-      <text x="342" y="388"><tspan fill="#a6e3a1">installed</tspan><tspan fill="#a6adc8"> mods/tabs-dev</tspan></text>
-      <text x="342" y="414" fill="#7f849c">same: mods/git-graph</text>
-      <text x="342" y="440" fill="#7f849c">same: themes/herdr-catppuccin.json</text>
-      <text x="342" y="466"><tspan fill="#a6e3a1">installed</tspan><tspan fill="#a6adc8"> layouts/tkhwang-herdr.json</tspan></text>
-      <text x="342" y="500" fill="#cdd6f4">restart Herdr if a mod folder was new,</text>
-      <text x="342" y="526" fill="#cdd6f4">then switch to the tkhwang-herdr layout</text>
-      <text x="342" y="552" fill="#cdd6f4">(⌘⇧L)</text>
+      <text x="342" y="336"><tspan fill="#a6e3a1" font-weight="700">[+]</tspan><tspan fill="#a6e3a1"> installed</tspan><tspan fill="#a6adc8"> mods/agents-dev</tspan></text>
+      <text x="342" y="362"><tspan fill="#a6e3a1" font-weight="700">[+]</tspan><tspan fill="#a6e3a1"> installed</tspan><tspan fill="#a6adc8"> mods/better-spaces</tspan></text>
+      <text x="342" y="388"><tspan fill="#a6e3a1" font-weight="700">[+]</tspan><tspan fill="#a6e3a1"> installed</tspan><tspan fill="#a6adc8"> mods/tabs-dev</tspan></text>
+      <text x="342" y="414" fill="#7f849c"><tspan fill="#89b4fa" font-weight="700">[*]</tspan> same: mods/git-graph</text>
+      <text x="342" y="440" fill="#7f849c"><tspan fill="#89b4fa" font-weight="700">[*]</tspan> same: themes/herdr-catppuccin.json</text>
+      <text x="342" y="466"><tspan fill="#a6e3a1" font-weight="700">[+]</tspan><tspan fill="#a6e3a1"> installed</tspan><tspan fill="#a6adc8"> layouts/tkhwang-herdr.json</tspan></text>
+      <text x="342" y="500" fill="#cdd6f4"><tspan fill="#89b4fa" font-weight="700">[*]</tspan> restart Herdr if a mod folder was new,</text>
+      <text x="342" y="526" fill="#cdd6f4" xml:space="preserve">    then switch to the tkhwang-herdr layout</text>
+      <text x="342" y="552" fill="#cdd6f4" xml:space="preserve">    (⌘⇧L)</text>
       <text x="342" y="588" fill="#60b9fc">$</text>
     </g>
     <rect x="360" y="573" width="10" height="20" fill="#60b9fc"/>
