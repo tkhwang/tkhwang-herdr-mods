@@ -6,7 +6,7 @@ index 0000000..037f6c8
 @@ -0,0 +1 @@
 +<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
 diff --git a/main.js b/main.js
-index a893bae..c4b3dd0 100644
+index a893bae..d7c6eed 100644
 --- a/main.js
 +++ b/main.js
 @@ -1,9 +1,32 @@
@@ -781,7 +781,14 @@ index a893bae..c4b3dd0 100644
        .pl(8 + row.depth * 14)
        .gap(6)
        .flex_none()
-@@ -906,16 +1439,123 @@ export default class Changes extends View {
+@@ -900,22 +1433,130 @@ export default class Changes extends View {
+       .rounded(5)
+       .cursor_pointer()
+       .hover((el) => el.bg(t.hover))
++      .tooltip(row.path) // compact folders: the whole path when a joined name is cut off
+       .on_click((_e, cx) => {
+         if (this.closed.has(closedKey)) this.closed.delete(closedKey);
+         else this.closed.add(closedKey);
          cx.notify();
        })
        .child(svg(`mods/better-changes/${chevron}.svg`).size(10).text_color(t.dim))
@@ -908,7 +915,7 @@ index a893bae..c4b3dd0 100644
        this.stagedCount &&
        !this.conflicts,
      );
-@@ -925,53 +1565,65 @@ export default class Changes extends View {
+@@ -925,53 +1566,65 @@ export default class Changes extends View {
        .flex_none()
        .border_t(1)
        .border_color(t.border)
@@ -996,7 +1003,7 @@ index a893bae..c4b3dd0 100644
            ),
        );
    }
-@@ -999,7 +1651,11 @@ export default class Changes extends View {
+@@ -999,7 +1652,11 @@ export default class Changes extends View {
        .flex_none()
        .border_b(1)
        .border_color(t.border)
@@ -1009,7 +1016,7 @@ index a893bae..c4b3dd0 100644
        .child(
          div()
            .flex_1()
-@@ -1061,7 +1717,7 @@ export default class Changes extends View {
+@@ -1061,7 +1718,7 @@ export default class Changes extends View {
        root.child(
          div().p(14).text_color(t.dim).child("Select a changed file in Changes to view its diff."),
        );
@@ -1018,7 +1025,7 @@ index a893bae..c4b3dd0 100644
      const split = this.diffLayout === "split";
      if (split)
        root.child(
-@@ -1117,11 +1773,12 @@ export default class Changes extends View {
+@@ -1117,11 +1774,12 @@ export default class Changes extends View {
      }
      const rows = split ? this.pairedRows : this.rows;
      const listId = `factory-diff-${this.context}-${this.path}-${this.scope}-${this.diffLayout}`;
@@ -1044,10 +1051,28 @@ index c29d7a3..10499d8 100644
    "title": "Better Changes"
  }
 diff --git a/model.js b/model.js
-index 05eda0e..18134f7 100644
+index 05eda0e..6826dbe 100644
 --- a/model.js
 +++ b/model.js
-@@ -153,3 +153,71 @@ export function splitDiffRows(rows) {
+@@ -82,7 +82,16 @@ export function fileTree(files, closed = new Set()) {
+   const rows = [];
+   function walk(node, depth) {
+     const directories = [...node.dirs].sort(([a], [b]) => a.localeCompare(b));
+-    for (const [name, directory] of directories) {
++    for (const [first, start] of directories) {
++      // compact folders: a folder holding only one folder joins it on one row
++      // (src/main/java), so deep trees don't spend a row and an indent per level.
++      let name = first;
++      let directory = start;
++      while (directory.files.length === 0 && directory.dirs.size === 1) {
++        const [[next, child]] = directory.dirs;
++        name = `${name}/${next}`;
++        directory = child;
++      }
+       rows.push({ kind: "folder", name, path: directory.path, depth });
+       if (!closed.has(directory.path)) walk(directory, depth + 1);
+     }
+@@ -153,3 +162,71 @@ export function splitDiffRows(rows) {
    flushReplacement();
    return paired;
  }
