@@ -22,6 +22,9 @@ src="$here/sources.json"
 work="$here/work"
 # Files the app writes into every mod folder.
 EXCLUDE=(--exclude '*.d.ts' --exclude jsconfig.json --exclude .DS_Store)
+# Beside the app's own files: what apply installed last (see record_install), which the
+# tkhwang-update mod compares with this repository on GitHub.
+RECORD=tkhwang-herdr-mods.json
 
 # Marks on what a run prints: [*] news along the way, [+] something done, [-] something wrong.
 # A mark is colored when its own line goes to a terminal (stderr for die), unless NO_COLOR is
@@ -179,6 +182,32 @@ swap() {
 
 raw() { echo "https://raw.githubusercontent.com/$1/$2/$3"; } # repo commit path
 
+# Records what this run installed, for tkhwang-update: the commit it was built from and that
+# commit's tree (the same files under another commit, such as the merge of the pull request they
+# came from, count as installed), the checkout's branch, and whether it had changes of its own.
+# A copy tkhwang-update downloaded has no .git: its commit and tree come in
+# TKHWANG_HERDR_MODS_COMMIT and TKHWANG_HERDR_MODS_TREE.
+record_install() {
+  local commit="${TKHWANG_HERDR_MODS_COMMIT:-}" tree="${TKHWANG_HERDR_MODS_TREE:-}" branch="" dirty=false what
+  if [ -z "$commit" ] && [ -e "$here/.git" ]; then
+    commit="$(git -C "$here" rev-parse -q --verify HEAD || true)"
+    tree="$(git -C "$here" rev-parse -q --verify 'HEAD^{tree}' || true)"
+    branch="$(git -C "$here" symbolic-ref -q --short HEAD || true)"
+    if [ -n "$(git -C "$here" status --porcelain)" ]; then dirty=true; fi
+  fi
+  jq -n --arg commit "$commit" --arg tree "$tree" --arg branch "$branch" --argjson dirty "$dirty" \
+    --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    'def opt: if . == "" then null else . end;
+     {commit: ($commit | opt), tree: ($tree | opt), branch: ($branch | opt), dirty: $dirty, applied_at: $at}' \
+    >"$stage/$RECORD"
+  mv "$stage/$RECORD" "$live/$RECORD"
+  what="${commit:0:7}"
+  if [ -z "$what" ]; then what="no commit (not a git checkout)"; fi
+  if [ -n "$branch" ]; then what="$what on $branch"; fi
+  if [ "$dirty" = true ]; then what="$what, with local changes"; fi
+  ok "recorded $RECORD: $what"
+}
+
 apply() {
   local m f changed="" repo commit path sum
   build_all "$TMP/mods"
@@ -235,6 +264,8 @@ apply() {
     swap "$f"
     ok "installed $f"
   done < <(q '.config[]')
+  # Last, so a run that stopped part way keeps the record of the install before it.
+  record_install
   info "restart Herdr if a mod folder was new, then pick the layout with ⌘⇧L"
 }
 
@@ -268,6 +299,11 @@ status() {
     if cmp -s "$here/config/$f" "$live/$f"; then app="same"; else app="differs (backup or apply)"; fi
     printf '%-20s %-6s %-40s %-14s %s\n' "$(basename "$f")" config "config/$f" "-" "$app"
   done < <(q '.config[]')
+  if [ -f "$live/$RECORD" ]; then
+    info "last apply: $(jq -r '(if .commit then .commit[0:7] else "no commit" end)
+      + (if .branch then " on \(.branch)" else "" end) + (if .dirty then ", with local changes" else "" end)
+      + ", \(.applied_at // "at an unknown time")"' "$live/$RECORD")"
+  fi
 }
 
 # ── update ────────────────────────────────────────────────────────────────────
