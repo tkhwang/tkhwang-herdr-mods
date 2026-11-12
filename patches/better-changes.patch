@@ -6,7 +6,7 @@ index 0000000..037f6c8
 @@ -0,0 +1 @@
 +<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
 diff --git a/main.js b/main.js
-index a893bae..ea03d98 100644
+index a893bae..727d952 100644
 --- a/main.js
 +++ b/main.js
 @@ -1,9 +1,32 @@
@@ -116,13 +116,13 @@ index a893bae..ea03d98 100644
      const source = (shared("better-changes.diff-tabs") ?? {})[space?.id]?.source;
 -    if (source) return source;
 +    if (source) return { loc: source, diffTab: true };
-+  }
+   }
 +  // markdown tab: the Markdown viewer tab has no terminal either; stay where it was opened from
 +  // (diffTab: a wrapper's repo keeps its bar, as for a diff tab).
 +  if (!candidates.length) {
 +    const md = markdownTab(space?.id);
 +    if (md && md.tab === tab && md.cwd) return { loc: { cwd: md.cwd, on: md.on ?? null }, diffTab: true };
-   }
++  }
 +  // panel folder: the tab's main pane, or the pane or folder picked for the tab, never just
 +  // the focused pane: the panel holds still as the focus moves, and shows what Files and Git show.
 +  const shown = panelFolder();
@@ -402,7 +402,7 @@ index a893bae..ea03d98 100644
    // commit there is no HEAD, so remove index entries with git rm --cached.
    // Literal pathspecs keep names such as [sample].txt from acting as patterns.
    indexAction(action, path, cx) {
-@@ -537,6 +772,111 @@ export default class Changes extends View {
+@@ -537,6 +772,147 @@ export default class Changes extends View {
      });
    }
  
@@ -457,7 +457,12 @@ index a893bae..ea03d98 100644
 +    cx.spawn(async (cx) => {
 +      try {
 +        const steps = [];
++        let left = 0;
 +        if (file) {
++          // A submodule is its own repository: restore and clean here leave its changes in
++          // place while reporting success, so say where to discard them instead.
++          if ((await this.submodules([path], root, on)).length)
++            throw Error(`${path} is a submodule: discard its changes inside the submodule`);
 +          steps.push(
 +            file.fresh
 +              ? ["--literal-pathspecs", "clean", "-f", "-q", "--", path]
@@ -481,6 +486,26 @@ index a893bae..ea03d98 100644
 +          const result = await this.git(args, root, on);
 +          if (result.code !== 0) throw Error((result.stderr || result.stdout).trim());
 +        }
++        if (!file) {
++          // Submodules keep their changes through restore and clean: count what is left.
++          const after = await this.git(
++            ["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all"],
++            root,
++            on,
++          );
++          if (after.code === 0)
++            left = (
++              await this.submodules(
++                changedFiles(after.stdout, [])
++                  .filter((f) => f.unstaged && !f.fresh)
++                  .map((f) => f.path),
++                root,
++                on,
++              )
++            ).length;
++        }
++        if (left && context === this.contextKey())
++          this.note = `Discarded the rest; ${left === 1 ? "1 submodule kept its" : `${left} submodules kept their`} changes: discard those inside the submodule`;
 +        const at = Date.now();
 +        this.reload = at;
 +        setShared("better-changes.reload", { root, on: on ?? null, at });
@@ -493,6 +518,17 @@ index a893bae..ea03d98 100644
 +        cx.notify();
 +      }
 +    });
++  }
++
++  // The paths among `paths` that are submodules (gitlinks, mode 160000 in the index).
++  async submodules(paths, root, on) {
++    if (!paths.length) return [];
++    const result = await this.git(["--literal-pathspecs", "ls-files", "-s", "-z", "--", ...paths], root, on);
++    if (result.code !== 0) return [];
++    return result.stdout
++      .split("\0")
++      .filter((entry) => entry.startsWith("160000 "))
++      .map((entry) => entry.slice(entry.indexOf("\t") + 1));
 +  }
 +
 +  // A discard button: dims like any icon, turns red once armed.
@@ -514,7 +550,7 @@ index a893bae..ea03d98 100644
    // Commit the existing index, not all working-tree edits. On failure, keep the
    // message so the user can fix the problem and retry without retyping it.
    commit(cx) {
-@@ -580,6 +920,130 @@ export default class Changes extends View {
+@@ -580,6 +956,130 @@ export default class Changes extends View {
        }
      });
    }
@@ -645,7 +681,7 @@ index a893bae..ea03d98 100644
    // ── Shared controls and file rows ─────────────────────────────────────────
  
    icon(id, asset, label, action, t, active = false, disabled = false, size = 24) {
-@@ -615,7 +1079,7 @@ export default class Changes extends View {
+@@ -615,7 +1115,7 @@ export default class Changes extends View {
      const selected = this.currentSelection();
      return h_flex()
        .id(`change-${scope}-${file.path}`)
@@ -654,7 +690,7 @@ index a893bae..ea03d98 100644
        .flex_none()
        .pl(8 + depth * 14)
        .pr(8)
-@@ -632,7 +1096,7 @@ export default class Changes extends View {
+@@ -632,7 +1132,7 @@ export default class Changes extends View {
        .hover((s) => s.bg(t.hover))
        .tooltip(file.path)
        .on_click((_e, cx) => this.pick(file, cx, scope))
@@ -663,7 +699,7 @@ index a893bae..ea03d98 100644
        .child(div().flex_1().min_w(0).truncate().child(name))
        .when(flat && parts.length > 0, (el) =>
          el.child(
-@@ -658,6 +1122,18 @@ export default class Changes extends View {
+@@ -658,6 +1158,18 @@ export default class Changes extends View {
            )
            .child(file.status),
        )
@@ -682,7 +718,7 @@ index a893bae..ea03d98 100644
        .when(scope !== "all", (el) =>
          el.child(
            this.icon(
-@@ -722,6 +1198,8 @@ export default class Changes extends View {
+@@ -722,6 +1234,8 @@ export default class Changes extends View {
  
    render() {
      const t = theme();
@@ -691,7 +727,7 @@ index a893bae..ea03d98 100644
      const root = v_flex()
        .size_full()
        .min_h(0)
-@@ -731,17 +1209,76 @@ export default class Changes extends View {
+@@ -731,17 +1245,76 @@ export default class Changes extends View {
        .border_color(t.border)
        .bg(t.background)
        .text_color(t.foreground)
@@ -769,7 +805,7 @@ index a893bae..ea03d98 100644
    renderSidebarHeader(t) {
      const head = h_flex()
        .h(44)
-@@ -830,6 +1367,18 @@ export default class Changes extends View {
+@@ -830,6 +1403,18 @@ export default class Changes extends View {
            .child(div().font_semibold().text_size(em(0.9)).child(label))
            .child(div().text_size(em(0.8)).text_color(t.dim).child(String(count)))
            .child(div().flex_1())
@@ -788,7 +824,7 @@ index a893bae..ea03d98 100644
            .child(
              this.icon(
                `changes-${action}-all`,
-@@ -892,7 +1441,7 @@ export default class Changes extends View {
+@@ -892,7 +1477,7 @@ export default class Changes extends View {
      const chevron = this.closed.has(closedKey) ? "chevron-right" : "chevron-down";
      return h_flex()
        .id(`changes-folder-${scope}-${row.path}`)
@@ -797,7 +833,7 @@ index a893bae..ea03d98 100644
        .pl(8 + row.depth * 14)
        .gap(6)
        .flex_none()
-@@ -900,22 +1449,130 @@ export default class Changes extends View {
+@@ -900,22 +1485,130 @@ export default class Changes extends View {
        .rounded(5)
        .cursor_pointer()
        .hover((el) => el.bg(t.hover))
@@ -931,7 +967,7 @@ index a893bae..ea03d98 100644
        this.stagedCount &&
        !this.conflicts,
      );
-@@ -925,53 +1582,65 @@ export default class Changes extends View {
+@@ -925,53 +1618,65 @@ export default class Changes extends View {
        .flex_none()
        .border_t(1)
        .border_color(t.border)
@@ -1019,7 +1055,7 @@ index a893bae..ea03d98 100644
            ),
        );
    }
-@@ -999,7 +1668,11 @@ export default class Changes extends View {
+@@ -999,7 +1704,11 @@ export default class Changes extends View {
        .flex_none()
        .border_b(1)
        .border_color(t.border)
@@ -1032,7 +1068,7 @@ index a893bae..ea03d98 100644
        .child(
          div()
            .flex_1()
-@@ -1061,7 +1734,7 @@ export default class Changes extends View {
+@@ -1061,7 +1770,7 @@ export default class Changes extends View {
        root.child(
          div().p(14).text_color(t.dim).child("Select a changed file in Changes to view its diff."),
        );
@@ -1041,7 +1077,7 @@ index a893bae..ea03d98 100644
      const split = this.diffLayout === "split";
      if (split)
        root.child(
-@@ -1117,11 +1790,12 @@ export default class Changes extends View {
+@@ -1117,11 +1826,12 @@ export default class Changes extends View {
      }
      const rows = split ? this.pairedRows : this.rows;
      const listId = `factory-diff-${this.context}-${this.path}-${this.scope}-${this.diffLayout}`;
