@@ -1,5 +1,12 @@
+diff --git b/discard.svg b/discard.svg
+new file mode 100644
+index 0000000..037f6c8
+--- /dev/null
++++ b/discard.svg
+@@ -0,0 +1 @@
++<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
 diff --git a/main.js b/main.js
-index a893bae..24365b2 100644
+index a893bae..c4b3dd0 100644
 --- a/main.js
 +++ b/main.js
 @@ -1,9 +1,32 @@
@@ -54,7 +61,7 @@ index a893bae..24365b2 100644
  // Status polling must not take optional index locks or trigger filesystem-monitor
  // helpers. Diff reads also disable external diff/textconv helpers at the call site.
  const READ_ONLY_GIT_OPTIONS = [
-@@ -29,6 +58,11 @@ const READ_ONLY_GIT_OPTIONS = [
+@@ -29,33 +58,75 @@ const READ_ONLY_GIT_OPTIONS = [
    "-c",
    "diff.autoRefreshIndex=false",
  ];
@@ -66,9 +73,10 @@ index a893bae..24365b2 100644
  const MAX_FILES = 1000;
  const MAX_DIFF_LINES = 1500;
  const MAX_LINE_LENGTH = 4000;
-@@ -36,26 +70,62 @@ const CONTEXT_POLL_MS = 300;
+ const CONTEXT_POLL_MS = 300;
  const STATUS_POLL_MS = 10000;
  const TAB_OPEN_TIMEOUT_MS = 1500;
++const DISCARD_CONFIRM_MS = 3000; // discard
  
 -// Follow the active terminal unless the active tab is our diff viewer. Mod panes
 -// have no terminal cwd, so that case must use the repository saved for the tab.
@@ -108,13 +116,13 @@ index a893bae..24365b2 100644
      const source = (shared("better-changes.diff-tabs") ?? {})[space?.id]?.source;
 -    if (source) return source;
 +    if (source) return { loc: source, diffTab: true };
-   }
++  }
 +  // markdown tab: the Markdown viewer tab has no terminal either; stay where it was opened from
 +  // (diffTab: a wrapper's repo keeps its bar, as for a diff tab).
 +  if (!candidates.length) {
 +    const md = markdownTab(space?.id);
 +    if (md && md.tab === tab && md.cwd) return { loc: { cwd: md.cwd, on: md.on ?? null }, diffTab: true };
-+  }
+   }
 +  // panel folder: the tab's main pane, or the pane or folder picked for the tab, never just
 +  // the focused pane: the panel holds still as the focus moves, and shows what Files and Git show.
 +  const shown = panelFolder();
@@ -139,7 +147,7 @@ index a893bae..24365b2 100644
  // One View class serves two roles: a sidebar and a regular diff tab. Each copy
  // owns its local state; shared("better-changes.*") connects the separate copies.
  export default class Changes extends View {
-@@ -72,20 +142,30 @@ export default class Changes extends View {
+@@ -72,20 +143,30 @@ export default class Changes extends View {
        (localStorage.getItem("better-changes.diff-layout") === "split" ? "split" : "inline");
      if (this.mode === "sidebar" || !shared("better-changes.diff-layout"))
        setShared("better-changes.diff-layout", this.diffLayout);
@@ -172,7 +180,7 @@ index a893bae..24365b2 100644
      this.startPolling(cx);
      this.listenForCommands(cx);
      this.refresh(cx);
-@@ -168,7 +248,63 @@ export default class Changes extends View {
+@@ -168,7 +249,63 @@ export default class Changes extends View {
        ? ((shared("better-changes.diff-tabs") ?? {})[this.diffSpace]?.source ??
            this.source ??
            location())
@@ -237,7 +245,7 @@ index a893bae..24365b2 100644
    }
  
    // Include both cwd and machine: identical paths on different machines are
-@@ -213,6 +349,8 @@ export default class Changes extends View {
+@@ -213,6 +350,8 @@ export default class Changes extends View {
        this.error = null;
        this.note = null;
        this.watched = null;
@@ -246,7 +254,7 @@ index a893bae..24365b2 100644
        this.message = "";
        this.input.set_value("");
      }
-@@ -224,6 +362,23 @@ export default class Changes extends View {
+@@ -224,6 +363,23 @@ export default class Changes extends View {
          const top = await this.git(["rev-parse", "--show-toplevel"], cwd, on);
          if (context !== this.contextKey()) return;
          if (top.code !== 0) {
@@ -270,7 +278,7 @@ index a893bae..24365b2 100644
            this.root = null;
            this.files = [];
            this.rows = [];
-@@ -249,7 +404,20 @@ export default class Changes extends View {
+@@ -249,7 +405,20 @@ export default class Changes extends View {
          ];
          for (const stat of stats)
            if (stat.code !== 0) throw Error(stat.stderr || "Cannot read change statistics");
@@ -291,7 +299,7 @@ index a893bae..24365b2 100644
          const files = changedFiles(
            status.stdout,
            stats.map((r) => r.stdout),
-@@ -269,14 +437,72 @@ export default class Changes extends View {
+@@ -269,14 +438,72 @@ export default class Changes extends View {
            if (this.path && !this.diffLoading) this.loadDiff(cx);
          }
        } catch (error) {
@@ -365,7 +373,7 @@ index a893bae..24365b2 100644
    watch(root, cx) {
      if (this.on || this.watched === root) return;
      this.watched = root;
-@@ -304,10 +530,18 @@ export default class Changes extends View {
+@@ -304,10 +531,18 @@ export default class Changes extends View {
        scope,
        at: Date.now(),
      };
@@ -385,7 +393,112 @@ index a893bae..24365b2 100644
      const name = file.path.split("/").pop();
      // Publish before opening/selecting the tab so its View sees the latest pick.
      // A pending timestamp prevents rapid clicks from creating duplicate tabs.
-@@ -580,6 +814,130 @@ export default class Changes extends View {
+@@ -486,7 +721,7 @@ export default class Changes extends View {
+   }
+   // ── Git mutations (sidebar only) ──────────────────────────────────────────
+ 
+-  // Never reset working files. Unstage changes only the index; before the first
++  // Stage and unstage never touch working files (only discard below does). Unstage changes only the index; before the first
+   // commit there is no HEAD, so remove index entries with git rm --cached.
+   // Literal pathspecs keep names such as [sample].txt from acting as patterns.
+   indexAction(action, path, cx) {
+@@ -537,6 +772,95 @@ export default class Changes extends View {
+     });
+   }
+ 
++  // discard: throw away unstaged working-tree changes, the only action here that edits files.
++  // A tracked file goes back to its index copy (staged changes stay); an untracked one is
++  // deleted with git clean (ignored files are never touched). Conflicts are left alone.
++  // Destructive, so the first click only arms the button and a second click within
++  // DISCARD_CONFIRM_MS runs it.
++  armDiscard(key, run, cx) {
++    if (this.armed === key) {
++      this.armed = null;
++      run(cx);
++      cx.notify();
++      return;
++    }
++    this.armed = key;
++    cx.notify();
++    cx.timer.after(DISCARD_CONFIRM_MS, (cx) => {
++      if (this.armed !== key) return;
++      this.armed = null;
++      cx.notify();
++    });
++  }
++
++  discard(path, cx) {
++    if (
++      !this.root ||
++      this.loading ||
++      this.busy ||
++      this.contextKey() !== this.context ||
++      this.mode !== "sidebar"
++    )
++      return;
++    const targets = this.files.filter(
++      (f) => f.unstaged && !f.conflict && (path === null || f.path === path),
++    );
++    if (!targets.length || (path === null && this.conflicts)) return;
++    const root = this.root;
++    const on = this.on;
++    const context = this.context;
++    const steps = [];
++    if (path !== null) {
++      steps.push(
++        targets[0].fresh
++          ? ["--literal-pathspecs", "clean", "-f", "-q", "--", path]
++          : ["--literal-pathspecs", "restore", "--worktree", "--", path],
++      );
++    } else {
++      // All: the whole tree, not just the listed files (the list stops at MAX_FILES).
++      if (targets.some((f) => !f.fresh)) steps.push(["restore", "--worktree", "--", "."]);
++      if (targets.some((f) => f.fresh)) steps.push(["clean", "-f", "-d", "-q", "--", "."]);
++    }
++    this.busy = true;
++    this.operation = "discard";
++    this.note = null;
++    cx.notify();
++    cx.spawn(async (cx) => {
++      try {
++        for (const args of steps) {
++          const result = await this.git(args, root, on);
++          if (result.code !== 0) throw Error((result.stderr || result.stdout).trim());
++        }
++        const at = Date.now();
++        this.reload = at;
++        setShared("better-changes.reload", { root, on: on ?? null, at });
++      } catch (error) {
++        if (context === this.contextKey()) this.note = `Discard failed: ${error.message}`;
++      } finally {
++        this.busy = false;
++        this.operation = null;
++        this.refresh(cx);
++        cx.notify();
++      }
++    });
++  }
++
++  // A discard button: dims like any icon, turns red once armed.
++  discardIcon(id, label, run, t, disabled, size) {
++    const armed = this.armed === id && !disabled;
++    const el = this.icon(
++      id,
++      "discard",
++      armed ? `Click again to ${label.toLowerCase()} (cannot be undone)` : label,
++      (cx) => this.armDiscard(id, run, cx),
++      t,
++      false,
++      disabled,
++      size,
++    );
++    return armed ? el.border_color(t.ansi1).text_color(t.ansi1) : el;
++  }
++
+   // Commit the existing index, not all working-tree edits. On failure, keep the
+   // message so the user can fix the problem and retry without retyping it.
+   commit(cx) {
+@@ -580,6 +904,130 @@ export default class Changes extends View {
        }
      });
    }
@@ -516,7 +629,7 @@ index a893bae..24365b2 100644
    // ── Shared controls and file rows ─────────────────────────────────────────
  
    icon(id, asset, label, action, t, active = false, disabled = false, size = 24) {
-@@ -615,7 +973,7 @@ export default class Changes extends View {
+@@ -615,7 +1063,7 @@ export default class Changes extends View {
      const selected = this.currentSelection();
      return h_flex()
        .id(`change-${scope}-${file.path}`)
@@ -525,7 +638,7 @@ index a893bae..24365b2 100644
        .flex_none()
        .pl(8 + depth * 14)
        .pr(8)
-@@ -632,7 +990,7 @@ export default class Changes extends View {
+@@ -632,7 +1080,7 @@ export default class Changes extends View {
        .hover((s) => s.bg(t.hover))
        .tooltip(file.path)
        .on_click((_e, cx) => this.pick(file, cx, scope))
@@ -534,7 +647,26 @@ index a893bae..24365b2 100644
        .child(div().flex_1().min_w(0).truncate().child(name))
        .when(flat && parts.length > 0, (el) =>
          el.child(
-@@ -722,6 +1080,8 @@ export default class Changes extends View {
+@@ -658,6 +1106,18 @@ export default class Changes extends View {
+           )
+           .child(file.status),
+       )
++      .when(scope === "unstaged" && !file.conflict, (el) =>
++        el.child(
++          this.discardIcon(
++            `changes-discard-file-${file.path}`,
++            file.fresh ? "Delete untracked file" : "Discard changes",
++            (cx) => this.discard(file.path, cx),
++            t,
++            this.busy || this.loading,
++            20,
++          ),
++        ),
++      )
+       .when(scope !== "all", (el) =>
+         el.child(
+           this.icon(
+@@ -722,6 +1182,8 @@ export default class Changes extends View {
  
    render() {
      const t = theme();
@@ -543,7 +675,7 @@ index a893bae..24365b2 100644
      const root = v_flex()
        .size_full()
        .min_h(0)
-@@ -731,17 +1091,76 @@ export default class Changes extends View {
+@@ -731,17 +1193,76 @@ export default class Changes extends View {
        .border_color(t.border)
        .bg(t.background)
        .text_color(t.foreground)
@@ -621,7 +753,26 @@ index a893bae..24365b2 100644
    renderSidebarHeader(t) {
      const head = h_flex()
        .h(44)
-@@ -892,7 +1311,7 @@ export default class Changes extends View {
+@@ -830,6 +1351,18 @@ export default class Changes extends View {
+           .child(div().font_semibold().text_size(em(0.9)).child(label))
+           .child(div().text_size(em(0.8)).text_color(t.dim).child(String(count)))
+           .child(div().flex_1())
++          .when(!isStaged, (el) =>
++            el.child(
++              this.discardIcon(
++                "changes-discard-all",
++                this.conflicts ? "Resolve conflicts before discarding all" : "Discard all changes",
++                (cx) => this.discard(null, cx),
++                t,
++                !count || this.conflicts || this.busy || this.loading,
++                22,
++              ),
++            ),
++          )
+           .child(
+             this.icon(
+               `changes-${action}-all`,
+@@ -892,7 +1425,7 @@ export default class Changes extends View {
      const chevron = this.closed.has(closedKey) ? "chevron-right" : "chevron-down";
      return h_flex()
        .id(`changes-folder-${scope}-${row.path}`)
@@ -630,7 +781,7 @@ index a893bae..24365b2 100644
        .pl(8 + row.depth * 14)
        .gap(6)
        .flex_none()
-@@ -906,16 +1325,123 @@ export default class Changes extends View {
+@@ -906,16 +1439,123 @@ export default class Changes extends View {
          cx.notify();
        })
        .child(svg(`mods/better-changes/${chevron}.svg`).size(10).text_color(t.dim))
@@ -757,7 +908,7 @@ index a893bae..24365b2 100644
        this.stagedCount &&
        !this.conflicts,
      );
-@@ -925,53 +1451,65 @@ export default class Changes extends View {
+@@ -925,53 +1565,65 @@ export default class Changes extends View {
        .flex_none()
        .border_t(1)
        .border_color(t.border)
@@ -845,7 +996,7 @@ index a893bae..24365b2 100644
            ),
        );
    }
-@@ -999,7 +1537,11 @@ export default class Changes extends View {
+@@ -999,7 +1651,11 @@ export default class Changes extends View {
        .flex_none()
        .border_b(1)
        .border_color(t.border)
@@ -858,7 +1009,7 @@ index a893bae..24365b2 100644
        .child(
          div()
            .flex_1()
-@@ -1061,7 +1603,7 @@ export default class Changes extends View {
+@@ -1061,7 +1717,7 @@ export default class Changes extends View {
        root.child(
          div().p(14).text_color(t.dim).child("Select a changed file in Changes to view its diff."),
        );
@@ -867,7 +1018,7 @@ index a893bae..24365b2 100644
      const split = this.diffLayout === "split";
      if (split)
        root.child(
-@@ -1117,11 +1659,12 @@ export default class Changes extends View {
+@@ -1117,11 +1773,12 @@ export default class Changes extends View {
      }
      const rows = split ? this.pairedRows : this.rows;
      const listId = `factory-diff-${this.context}-${this.path}-${this.scope}-${this.diffLayout}`;
