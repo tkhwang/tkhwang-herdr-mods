@@ -56,7 +56,7 @@ index 1297e14..9d06a54 100644
    // A dialog/menu describes this snapshot, not whatever HEAD happens to be
    // when the user confirms it. Fetch does not operate on the current branch.
 diff --git a/git.js b/git.js
-index 1716331..fbc073a 100644
+index b464a19..4bbc227 100644
 --- a/git.js
 +++ b/git.js
 @@ -4,7 +4,9 @@
@@ -70,7 +70,7 @@ index 1716331..fbc073a 100644
  export const STATUS = ["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all"];
  export const UNCOMMITTED = "*";
  // Git's pretty fields are NUL-free strings; -z terminates each seven-field record.
-@@ -384,7 +386,8 @@ export function fileArgs(commit) {
+@@ -386,7 +388,8 @@ export function fileArgs(commit) {
    return { status: [...base, "--name-status"], numstat: [...base, "--numstat"] };
  }
  
@@ -80,7 +80,7 @@ index 1716331..fbc073a 100644
    const stats = new Map();
    for (const line of numstatText.split("\n").filter(Boolean)) {
      const [a, d, ...path] = line.split("\t");
-@@ -392,7 +395,7 @@ export function joinFiles(statusText, numstatText) {
+@@ -394,7 +397,7 @@ export function joinFiles(statusText, numstatText) {
    }
    return statusText.split("\n").filter(Boolean).map((line) => {
      const [s, ...path] = line.split("\t"), p = path.join("\t");
@@ -90,7 +90,7 @@ index 1716331..fbc073a 100644
  }
  
 diff --git a/graph.js b/graph.js
-index 304b1e1..910ce67 100644
+index 423c6ce..12e0dd3 100644
 --- a/graph.js
 +++ b/graph.js
 @@ -1,6 +1,8 @@
@@ -117,7 +117,7 @@ index 304b1e1..910ce67 100644
    const space = spaces().find((s) => s.active), f = focused();
    const pane = f?.pane ? panes().find((p) => p.pane === f.pane) : null;
    const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
-@@ -37,6 +44,8 @@ const pad2 = (n) => String(n).padStart(2, "0");
+@@ -43,6 +50,8 @@ const pad2 = (n) => String(n).padStart(2, "0");
  const laneColors = (t) => [t.ansi4, t.ansi2, t.ansi5, t.ansi3, t.ansi6, t.ansi1, t.ansi12, t.ansi10, t.ansi13, t.ansi11, t.ansi14, t.ansi9];
  const isRefChange = (p) => /\/(HEAD|packed-refs)$|\/refs\//.test(p);
  const inGitDir = (p) => p.includes("/.git/") || p.endsWith("/.git");
@@ -126,7 +126,7 @@ index 304b1e1..910ce67 100644
  
  function ago(seconds) {
    const s = Date.now() / 1000 - seconds;
-@@ -56,7 +65,8 @@ function stamp(seconds) {
+@@ -62,7 +71,8 @@ function stamp(seconds) {
  const tilde = (path, on) => (!on && path?.startsWith(home()) ? "~" + path.slice(home().length) : path);
  const brief = (c) => ({ hash: c.hash, subject: c.subject, parents: c.parents });
  const count = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -136,7 +136,7 @@ index 304b1e1..910ce67 100644
  const scopeOf = ({ all, remotes }) => `${all} ${remotes}`;
  // Folders kept as they were last read, and commits' details (a commit never changes).
  const SEEN = 24, DETAILS = 200;
-@@ -369,7 +379,7 @@ export class Graph {
+@@ -379,7 +389,7 @@ export class Graph {
            const paths = (await watchFolder(dir)).map((p) => p.replace(/\\/g, "/"));
            if (token !== this.watchToken) return;
            if (paths.some((p) => (gitDir || inGitDir(p)) && isRefChange(p))) this.refresh(cx, true);
@@ -145,7 +145,7 @@ index 304b1e1..910ce67 100644
          }
        } catch { if (token === this.watchToken) this.watching = null; }
      });
-@@ -507,7 +517,8 @@ export class Graph {
+@@ -541,7 +551,8 @@ export class Graph {
          let details;
          if (commit.uncommitted) {
            const numstat = this.head ? await git(["diff", "--no-renames", "--no-ext-diff", "--numstat", "HEAD"]) : { stdout: "" };
@@ -155,7 +155,7 @@ index 304b1e1..910ce67 100644
            details = { files: stats.slice(0, 500), more: Math.max(0, stats.length - 500) };
          } else {
            const args = fileArgs(commit);
-@@ -835,9 +846,10 @@ export class Graph {
+@@ -875,9 +886,10 @@ export class Graph {
  
    empty(t) {
      const s = this.state, where = tilde(this.cwd, this.on);
@@ -169,7 +169,7 @@ index 304b1e1..910ce67 100644
        : s === "empty" ? ["commit", "No commits yet", "Make the first commit and it shows up here."]
        : s === "error" ? ["graph", "Can't read the history", this.error]
        : ["graph", "Loading history…", ""];
-@@ -861,6 +873,7 @@ export class Graph {
+@@ -903,6 +915,7 @@ export class Graph {
      const setting = `${depthSetting()} ${tagsShown()}`;
      if (setting !== this.seenSetting) { const first = this.seenSetting === undefined; this.seenSetting = setting; if (!first && !this.opened) this.refresh(cx); }
      const t = theme(), mono = settings().font_family ?? "JetBrains Mono", ready = this.state === "ready";
@@ -177,8 +177,8 @@ index 304b1e1..910ce67 100644
      return v_flex().id("git-graph").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border)
        .text_color(t.foreground).text_size(12.5).track_focus(this.handle)
        .on_mouse_move((e, cx) => this.moveDrag(e, cx))
-@@ -878,6 +891,7 @@ export class Graph {
-         if (wide !== this.wide || graphMax !== this.graphMax) { this.wide = wide; this.graphMax = graphMax; cx.notify(); }
+@@ -923,6 +936,7 @@ export class Graph {
+         if (wide !== this.wide || graphMax !== this.graphMax || resized) { this.wide = wide; this.graphMax = graphMax; cx.notify(); }
        })
        .child(this.header(t))
 +      .when(Boolean(folders), (e) => e.child(folders)) // panel folder

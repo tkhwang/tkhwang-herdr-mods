@@ -72,17 +72,31 @@ The themes have no license either: `apply` downloads them at the pinned commit a
 ./sync.sh backup                   # ~/.config/herdr-app -> patches/, own/, config/
 ./sync.sh apply                    # build, then install into ~/.config/herdr-app
 ./sync.sh build                    # only put the mods together, into build/mods
-./sync.sh update <mod> <ref>       # take a new upstream version (a tag, a branch or a full commit), keeping my patch
-./sync.sh update <mod> --continue  # finish an update after fixing what it couldn't merge, in work/<mod>/
+./sync.sh update                   # every upstream to its newest version, keeping my patches; one my patch doesn't go onto is left as it is, and it says why
+./sync.sh update --dry-run         # the same, writing nothing
+./sync.sh update <name> [<ref>]    # one mod or themes/<file>, to <ref> (a tag, a branch or a full commit) or its newest; a merge that needs a hand waits in work/<name>/
+./sync.sh update <name> --continue # finish it after fixing what waits in work/<name>/
+./sync.sh update <name> --abort    # drop it
 ```
 
 **Day to day.** Change a mod or the layout in the app, which reloads at once, then `./sync.sh backup` and commit. The commit shows my change and nothing else: `backup` rewrites each mod's patch against its upstream and puts the shared files back in `own/shared/`. It stops, changing nothing, if the copies of a shared file in the app differ.
 
-**Taking an upstream release.** `./sync.sh update git-graph v0.4.0` merges three ways, file by file: the old upstream, the old upstream with my patch, and the new upstream. When everything merges it moves `upstream/git-graph/` to the new version, rewrites the patch on top of it and records the commit (and tag) in `sources.json`; `./sync.sh apply` then installs it. A file changed in the same place on both sides keeps conflict markers in `work/git-graph/`: fix it there, then `./sync.sh update git-graph --continue`. If upstream moved the mod to another folder, change its `path` in `sources.json` first.
+**Taking upstream releases.** `./sync.sh update` takes every upstream in `sources.json` to its newest version, one at a time, and moves only the ones my changes still go onto; the others stay exactly as they were, and it says why. The newest version is, for a Herdr clone, the version of Herdr installed here (`herdr-app --version`; Herdr's newest release when it isn't installed), since that is the app the clone runs in; for a mod pinned at a tag, the newest release tag; for any other, the head of its repo's default branch. A mod whose folder upstream didn't change keeps its pin.
 
-For a Herdr clone the ref is a Herdr version tag: `./sync.sh update agents-dev v0.1.13`. Herdr's `mod.clone` renamed the clone's own asset paths (`mods/agents/…` to `mods/agents-dev/…`) and my patch carries that, but new code from Herdr names `mods/agents/…`: look for those after an update.
+For each mod it merges three ways, file by file: the old upstream, the old upstream with my patch, and the new upstream. A Herdr clone's two upstreams first get what Herdr's `mod.clone` does to a clone, which my patch carries: its own asset paths and overlay names renamed (`mods/agents/…` to `mods/agents-dev/…`) and `cloned_from` in `mod.json`. So the merge sees only my changes, new code from Herdr names the clone's own files, and `cloned_from` takes the new version. The mod moves when every file merges, my patch against the new upstream builds exactly the merged files, and `herdr-app check` passes the mod with its shared files. Then `upstream/<mod>/` and its extra files, the patch and the pins in `sources.json` are written together. A mod's extra files (`upstream/<mod>.extra/`) follow the head of their own repos in the same merge. A fetched mod or a theme only moves its pin, and a theme its sha256, once its files are there and check out.
 
-**What apply does.** It copies, never links: the app rewrites the layout file as the window is used. Each changed mod is staged beside the app folder, so the app never loads a partial mod, and checked with `herdr-app check` before any goes in; if one fails, nothing is installed. Every file it replaces is moved to `~/.config/herdr-app.bak-<time>-<pid>/` first. Last, it records what it installed in `~/.config/herdr-app/tkhwang-herdr-mods.json`: the commit, that commit's tree, the branch and whether the checkout had uncommitted changes, which `tkhwang-update` compares with GitHub; a run that stops part way keeps the record of the install before it. Mods that `sources.json` doesn't name are left alone by every command. `sync.sh` needs `jq`, `git`, `rsync`, `curl` and `shasum`, all on macOS.
+A mod stays as it is, and the update says why, when:
+- my patch and upstream changed the same place in a file, or upstream deleted a file I changed, or changed one I deleted; it names the files;
+- `herdr-app check` rejects the merged mod; its errors are shown;
+- upstream moved the mod's folder: it names the new one, and setting `path` in `sources.json` to it follows it;
+- upstream removed the folder, or the newest version isn't ahead of the pinned one (Herdr installed here is older than the clone, say);
+- `upstream/<mod>/` isn't what upstream shipped at the pinned commit: the merge starts from it, so put back what upstream ships and keep the change in the patch.
+
+It ends with what moved, what stayed and what was already up to date, and exits with 1 when something stayed. Under each mod that moved it lists the upstream commits that came in, the README lines that still name the old version, and a `LICENSE` or `NOTICE` the source changed (`licenses/` keeps them as shipped at the pinned commit). Then `./sync.sh apply`, check the app, and commit `upstream/`, `patches/` and `sources.json`, a mod to a commit. The update starts from `patches/`, so back up first (`./sync.sh backup`) when the app has changes of its own.
+
+To take one that stayed by hand, `./sync.sh update agents-dev` (or with a ref: `./sync.sh update git-graph v0.4.0`) merges the same way but leaves what needs a hand in `work/agents-dev/`, with conflict markers: fix it there, then `./sync.sh update agents-dev --continue` checks it again and takes it, or `--abort` drops it. Nothing in `upstream/`, `patches/` or `sources.json` changes before that. Upstream repositories are kept in `work/.cache/` as blobless clones (their history, a file's contents downloaded only when read), fetched once a run.
+
+**What apply does.** It copies, never links: the app rewrites the layout file as the window is used. Each changed mod is staged beside the app folder, so the app never loads a partial mod, and checked with `herdr-app check` before any goes in; if one fails, nothing is installed. Every file it replaces is moved to `~/.config/herdr-app.bak-<time>-<pid>/` first. Last, it records what it installed in `~/.config/herdr-app/tkhwang-herdr-mods.json`: the commit, that commit's tree, the branch and whether the checkout had uncommitted changes, which `tkhwang-update` compares with GitHub; a run that stops part way keeps the record of the install before it. Mods that `sources.json` doesn't name are left alone by every command. `sync.sh` needs `jq`, `git`, `rsync`, `curl`, `shasum` and `perl`, all on macOS.
 
 ## Before you apply
 
@@ -321,7 +335,7 @@ Patched so the bar reads tabs … `+` [1] | [1|2] | [1|2/3] Files Changes Git �
 - `+` (Herdr's own `new-menu`) leads the buttons on the first row at the right instead of following the last tab; a tab dropped on it still goes last (marked `new tab place`).
 - The window switch comes next (marked `view mode`; `views/view-switch.js`). It only draws: a click sends the mode to `tkhwang-view-mode` (above), and the lit button is the shared `tkhwang-view-mode.view`.
 
-The buttons are the `tabs` block's `props.buttons` in `config/layouts/tkhwang-herdr.json`: the mod's two defaults, Files and Changes, plus Git with `mods/git-graph/icons/graph.svg`, the icon `tabs-dev` used. It runs no programs and reaches no network; the only file it reads is its own `mod.json`, for `settings`. Apache-2.0 ([`licenses/herdr-mods/LICENSE`](licenses/herdr-mods/LICENSE), [`licenses/herdr-mods/NOTICE-6e2ffe0`](licenses/herdr-mods/NOTICE-6e2ffe0)). When that repo moves on, `./sync.sh update better-tabs <commit>`.
+The buttons are the `tabs` block's `props.buttons` in `config/layouts/tkhwang-herdr.json`: the mod's two defaults, Files and Changes, plus Git with `mods/git-graph/icons/graph.svg`, the icon `tabs-dev` used. It runs no programs and reaches no network; the only file it reads is its own `mod.json`, for `settings`. Apache-2.0 ([`licenses/herdr-mods/LICENSE`](licenses/herdr-mods/LICENSE), [`licenses/herdr-mods/NOTICE-6e2ffe0`](licenses/herdr-mods/NOTICE-6e2ffe0)). `./sync.sh update` takes that repo's new commits to it.
 
 </details>
 
@@ -344,7 +358,7 @@ In the side panel it shows the folder Files and Changes show, with the folder ba
 
 It runs `git`, and for Manygit `find` and `env`; git reaches the network only on Fetch, Fetch all, Pull, Push or deleting a remote branch, and the mod itself asks GitHub's public releases API once a day for a newer release (**Stop checking** in its update window, or `CHECK = false` in `update.js`, turns that off). Herdr stops a command after 30 s, so a slow fetch or push can fail there.
 
-MIT ([`licenses/herdr-git-graph/LICENSE`](licenses/herdr-git-graph/LICENSE)); its icons follow Lucide, ISC (`upstream/git-graph/icons/LICENSE-lucide.txt`). To update it, `./sync.sh update git-graph <tag>`, then drop the `review fixes` hunks the new release already covers.
+MIT ([`licenses/herdr-git-graph/LICENSE`](licenses/herdr-git-graph/LICENSE)); its icons follow Lucide, ISC (`upstream/git-graph/icons/LICENSE-lucide.txt`). `./sync.sh update` takes its newest release; then drop the `review fixes` hunks that release already covers.
 
 </details>
 
@@ -353,7 +367,7 @@ MIT ([`licenses/herdr-git-graph/LICENSE`](licenses/herdr-git-graph/LICENSE)); it
 
 [ohneda/herdr-markdown-browser](https://github.com/ohneda/herdr-markdown-browser) at `bb1f3c7`: a native Markdown preview pane (Herdr's `TextView.markdown`, so no images or Mermaid), reloaded when the file changes, with a **Default app** button and `⌘⇧O` (its `mod:markdown-browser` section is merged into `keys.json`) for the system's default `.md` app. It was the viewer `tabs-dev`'s Markdown icon opened; the file tab (`tkhwang-markdown`) took that over, so nothing opens it now. It stays installed for `markdown.svg`, the icon `tabs-dev`'s Markdown button draws; its own Markdown list panel isn't in the layout. The one change: `mod.json` `place` is `none`, so it doesn't dock a column at the window's right edge.
 
-It reads the previewed file and watches its folder; opening in the default app runs `sh` with `realpath` and `open`; its list (unused here) would run `git rev-parse`, `git ls-files` or `find`; no network. MIT ([`licenses/herdr-markdown-browser/LICENSE`](licenses/herdr-markdown-browser/LICENSE)). To update it, `./sync.sh update markdown-browser <commit>`; the `place` change is its whole patch.
+It reads the previewed file and watches its folder; opening in the default app runs `sh` with `realpath` and `open`; its list (unused here) would run `git rev-parse`, `git ls-files` or `find`; no network. MIT ([`licenses/herdr-markdown-browser/LICENSE`](licenses/herdr-markdown-browser/LICENSE)). `./sync.sh update` takes that repo's new commits to it; the `place` change is its whole patch.
 
 </details>
 
@@ -366,7 +380,7 @@ It reads the previewed file and watches its folder; opening in the default app r
 
 Patched so a click on a file shows it in the file tab in the center (`tkhwang-markdown`, above) on View, as a click in Changes shows a diff: a Markdown file formatted, any other as its source in syntax colors. The read-only preview in the panel, and its **←**, are gone, and the panel always shows its tree. The file's row is lit while that tab shows it, and while that tab is the shown one the tree stays on the folder the file came from instead of jumping to the space's folder (marked `markdown tab` and `file tab`; `markdown.js`, the same file as in `better-changes`). The click passes the file's icon in both theme lightnesses, which the tab draws in its header.
 
-Its icons also show in Changes (`better-changes`' `file icons` reads them from `mods/file-icons/icons/`), so keep it installed. It runs `sh` to list a folder (`powershell` on Windows) and `git rev-parse` and `git status` (no optional locks), on the space's machine, and uses no network; the file tab reads the files you click. Its folder must keep the name `file-icons`: the icon paths are `mods/file-icons/icons/…` (`DIR` in `main.js` and `lookup.js`). MIT, © cybertron288 ([`licenses/file-icons/LICENSE`](licenses/file-icons/LICENSE)); the icons MIT, © Material Extensions (`upstream/file-icons/LICENSE-material-icon-theme.txt`); the panel is based on Herdr's own `files` mod, Apache-2.0 ([`licenses/herdr`](licenses/herdr)). When that repo moves on, `./sync.sh update file-icons <commit>`.
+Its icons also show in Changes (`better-changes`' `file icons` reads them from `mods/file-icons/icons/`), so keep it installed. It runs `sh` to list a folder (`powershell` on Windows) and `git rev-parse` and `git status` (no optional locks), on the space's machine, and uses no network; the file tab reads the files you click. Its folder must keep the name `file-icons`: the icon paths are `mods/file-icons/icons/…` (`DIR` in `main.js` and `lookup.js`). MIT, © cybertron288 ([`licenses/file-icons/LICENSE`](licenses/file-icons/LICENSE)); the icons MIT, © Material Extensions (`upstream/file-icons/LICENSE-material-icon-theme.txt`); the panel is based on Herdr's own `files` mod, Apache-2.0 ([`licenses/herdr`](licenses/herdr)). `./sync.sh update` takes that repo's new commits to it.
 
 </details>
 
@@ -377,7 +391,7 @@ Its icons also show in Changes (`better-changes`' `file icons` reads them from `
 <details>
 <summary><b><code>herdr-open-with-zed</code></b> · <code>+</code> menu · <a href="https://github.com/atleugim/herdr-open-with-zed">atleugim/herdr-open-with-zed</a> at <code>a15570e</code>, unchanged</summary>
 
-[atleugim/herdr-open-with-zed](https://github.com/atleugim/herdr-open-with-zed) at `a15570e`, unchanged: Herdr's `+` menu (`new-menu` 0.1.11) with an **Open with Zed** row that opens the focused terminal's folder in Zed (`zed`, else `zeditor`, else `open -a Zed`). `tabs-dev`'s `+` opens it; `better-tabs`' `+` opens Herdr's own `new-menu`, so it isn't reachable while the layout uses `better-tabs`. Apache-2.0 ([`licenses/herdr-open-with-zed/LICENSE`](licenses/herdr-open-with-zed/LICENSE)); when that repo moves on, `./sync.sh update herdr-open-with-zed <commit>`. It has no patch here.
+[atleugim/herdr-open-with-zed](https://github.com/atleugim/herdr-open-with-zed) at `a15570e`, unchanged: Herdr's `+` menu (`new-menu` 0.1.11) with an **Open with Zed** row that opens the focused terminal's folder in Zed (`zed`, else `zeditor`, else `open -a Zed`). `tabs-dev`'s `+` opens it; `better-tabs`' `+` opens Herdr's own `new-menu`, so it isn't reachable while the layout uses `better-tabs`. Apache-2.0 ([`licenses/herdr-open-with-zed/LICENSE`](licenses/herdr-open-with-zed/LICENSE)); `./sync.sh update` takes that repo's new commits to it. It has no patch here.
 
 </details>
 
