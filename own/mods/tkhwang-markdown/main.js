@@ -311,6 +311,9 @@ export default class MarkdownTab extends View {
     this.disk = null;
     this.seq++;
     this.showInEditor(disk);
+    // file tab: View of a source file shows the file's text now, not the edit just dropped; the
+    // reads that follow find it saved and leave the viewer alone.
+    this.showInViewer(disk);
     if (this.mode === "diff") this.loadDiff(cx);
     cx.notify();
   }
