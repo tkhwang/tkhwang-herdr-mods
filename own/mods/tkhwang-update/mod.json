@@ -1,0 +1,5 @@
+{
+  "place": "none",
+  "title": "Mods update",
+  "overlay": { "kind": "dialog", "width": 560, "height": 480 }
+}

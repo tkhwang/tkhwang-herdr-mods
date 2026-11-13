@@ -162,6 +162,9 @@
     },
     "tkhwang-markdown": {
       "kind": "own"
+    },
+    "tkhwang-update": {
+      "kind": "own"
     }
   },
   "themes": [

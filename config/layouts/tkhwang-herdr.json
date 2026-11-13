@@ -238,6 +238,16 @@
               }
             }
           ],
+          "floating": [
+            {
+              "id": "mods-update",
+              "content": {
+                "mod": "tkhwang-update"
+              },
+              "edge": "bottom",
+              "align": "center"
+            }
+          ],
           "resizable": false
         }
       ],

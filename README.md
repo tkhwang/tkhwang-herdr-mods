@@ -12,7 +12,7 @@ cd tkhwang-herdr-mods
 ./sync.sh apply
 ```
 
-After a first `apply`, restart Herdr (it sees new mod folders at start) and pick the `tkhwang-herdr` layout with ⌘⇧L, or run `herdr-app do layout.switch '{"name":"tkhwang-herdr"}'`. Every file `apply` replaces is moved to `~/.config/herdr-app.bak-<time>-<pid>/` first.
+After a first `apply`, restart Herdr (it sees new mod folders at start) and pick the `tkhwang-herdr` layout with ⌘⇧L, or run `herdr-app do layout.switch '{"name":"tkhwang-herdr"}'`. Every file `apply` replaces is moved to `~/.config/herdr-app.bak-<time>-<pid>/` first. From then on, a pill at the bottom of the window says when `main` here has moved on, and installs it (`tkhwang-update`, below).
 
 ## What it changes
 
@@ -28,6 +28,7 @@ After a first `apply`, restart Herdr (it sees new mod folders at start) and pick
 | **Center, Markdown tab**<br>`tkhwang-markdown` | a Markdown file clicked in Files or Changes, in a tab of its own with **View** \| **Diff** \| **Edit** in its header: formatted, what changed since the last commit, or its source, saved as you type and never over a change made meanwhile |
 | **Side panel, Git**<br>`git-graph` | a commit graph, or a Manygit list in a folder of repos |
 | **Terminal**<br>copy-on-select | copies a selection on mouse release |
+| **Update pill**<br>`tkhwang-update` | when `main` here has commits the app doesn't, a pill at the bottom of the window, like Herdr's own: **What changed** lists the pull requests and commits since, **Update** downloads that commit from GitHub and runs its `./sync.sh apply`, then "Updated to …" until closed |
 | **Theme**<br>Catppuccin | Mocha in dark mode, Latte in light mode, a `#60b9fc` accent |
 
 `tabs-dev`, `spaces-dev`, `changes-dev` and `files-dev` stay installed as fallbacks: put one back in the layout's tabs, spaces, changes or files block to switch. `files-dev` was the Files panel before `file-icons`; back in the files block, Files shows the folder Changes and Git show again, with the folder bar. `tabs-dev` was the tab bar before `better-tabs`, and what only it opens isn't reachable from `better-tabs`: the **Open with Zed** `+` menu (`herdr-open-with-zed`) and the Markdown icon, which opens the Markdown tab on the file `files-dev` or Changes is on. Its window switch moved out into `tkhwang-view-mode`; with `tabs-dev` back, take the layout's `view-mode` block out, or both switches fold windows.
@@ -42,7 +43,7 @@ Other people's code and mine are kept apart, so it is always clear what I change
 | `upstream/<mod>.extra/` | theirs | single files taken into that mod from another repo (`navigation.js` from filipores/herdr-spaces-status; `lookup.js` and `icons.js` from file-icons) |
 | `patches/<mod>.patch` | mine | everything I changed in that mod, as one diff against its upstream |
 | `own/shared/` | mine | files several mods carry the same copy of: `panel-folder.js`, `markdown.js`, `ports.js`, `play.svg`, `pause.svg`, `stop.svg` |
-| `own/mods/<mod>/` | mine | mods written from scratch: `tkhwang-view-mode`, `tkhwang-markdown` |
+| `own/mods/<mod>/` | mine | mods written from scratch: `tkhwang-view-mode`, `tkhwang-markdown`, `tkhwang-update` |
 | `config/` | mine | `layouts/tkhwang-herdr.json`, `settings.json`, `keys.json` |
 | `licenses/<source>/` | theirs | each source's `LICENSE` and `NOTICE`, as shipped at the pinned commit; `NOTICE-<commit>` beside it while mods from one source are pinned at different commits |
 | `sources.json` | | where each mod comes from: repo, path, commit (and tag), license, extra files, shared files |
@@ -67,7 +68,7 @@ The themes have no license either: `apply` downloads them at the pinned commit a
 ## Commands
 
 ```bash
-./sync.sh status                   # each mod: where it's from, my patch's size, whether the app has this build
+./sync.sh status                   # each mod: where it's from, my patch's size, whether the app has this build; what the last apply installed
 ./sync.sh backup                   # ~/.config/herdr-app -> patches/, own/, config/
 ./sync.sh apply                    # build, then install into ~/.config/herdr-app
 ./sync.sh build                    # only put the mods together, into build/mods
@@ -81,11 +82,11 @@ The themes have no license either: `apply` downloads them at the pinned commit a
 
 For a Herdr clone the ref is a Herdr version tag: `./sync.sh update agents-dev v0.1.13`. Herdr's `mod.clone` renamed the clone's own asset paths (`mods/agents/…` to `mods/agents-dev/…`) and my patch carries that, but new code from Herdr names `mods/agents/…`: look for those after an update.
 
-**What apply does.** It copies, never links: the app rewrites the layout file as the window is used. Each changed mod is staged beside the app folder, so the app never loads a partial mod, and checked with `herdr-app check` before any goes in; if one fails, nothing is installed. Every file it replaces is moved to `~/.config/herdr-app.bak-<time>-<pid>/` first. Mods that `sources.json` doesn't name are left alone by every command. `sync.sh` needs `jq`, `git`, `rsync`, `curl` and `shasum`, all on macOS.
+**What apply does.** It copies, never links: the app rewrites the layout file as the window is used. Each changed mod is staged beside the app folder, so the app never loads a partial mod, and checked with `herdr-app check` before any goes in; if one fails, nothing is installed. Every file it replaces is moved to `~/.config/herdr-app.bak-<time>-<pid>/` first. Last, it records what it installed in `~/.config/herdr-app/tkhwang-herdr-mods.json`: the commit, that commit's tree, the branch and whether the checkout had uncommitted changes, which `tkhwang-update` compares with GitHub; a run that stops part way keeps the record of the install before it. Mods that `sources.json` doesn't name are left alone by every command. `sync.sh` needs `jq`, `git`, `rsync`, `curl` and `shasum`, all on macOS.
 
 ## Before you apply
 
-- **What runs, and what reaches the network.** `better-spaces` runs `git`, `hc` and `gh` (GitHub with your local `gh` login). The sparkle **Message** button in `better-changes` runs `claude -p`, so the staged diff goes to Anthropic through your Claude Code login, and its Push button runs `git push` with your git credentials. `git-graph` reaches the network only on Fetch, Pull, Push or deleting a remote branch, and asks GitHub's releases API once a day for a newer release. `markdown-browser` uses no network. `file-icons` runs `sh` to list folders and `git` to read status, on the space's machine, and uses no network. `tkhwang-markdown` runs `git` only to read (the Diff view, on the file's machine), writes only the file you edit in it, and uses no network.
+- **What runs, and what reaches the network.** `better-spaces` runs `git`, `hc` and `gh` (GitHub with your local `gh` login). The sparkle **Message** button in `better-changes` runs `claude -p`, so the staged diff goes to Anthropic through your Claude Code login, and its Push button runs `git push` with your git credentials. `git-graph` reaches the network only on Fetch, Pull, Push or deleting a remote branch, and asks GitHub's releases API once a day for a newer release. `tkhwang-update` asks GitHub's public API every 3 hours for this repository's newest commit on `main` (and, when that moved, for the commits since the installed one), with no token and nothing about you; its **Update** downloads that commit from GitHub and runs its `sync.sh apply`. `markdown-browser` uses no network. `file-icons` runs `sh` to list folders and `git` to read status, on the space's machine, and uses no network. `tkhwang-markdown` runs `git` only to read (the Diff view, on the file's machine), writes only the file you edit in it, and uses no network.
 - **Workbranch wrappers.** In a folder of repos that is not a repo itself, `better-changes` and `changes-dev` show a repo picker, `git-graph` shows a Manygit list, and `better-spaces` and `agents-dev` name a workbranch task space (a `.workbranch.task` file beside its repos, or a folder of repos right under a project's `.workbranch.config` other than `_base`) after its repo with the branch under it when it holds one repo, and after its task folder when it holds several, since those repos are the same in every task; there `better-spaces` shows the project under the name and a repo's branch only when it isn't the task's (no PR status for a task folder). A plain folder of repos and a project's own folder keep their names.
 - **Theme picks.** A theme picked in Settings > Look is kept per layout in `layouts/.state/`; pick the Catppuccin themes there again if one was picked before.
 - **Command time limit.** Herdr stops a command after 30 s, so a slow fetch or push in `git-graph` can fail.
@@ -101,7 +102,7 @@ In `config/` and `own/`.
 <details>
 <summary><b><code>config/layouts/tkhwang-herdr.json</code></b> · the window</summary>
 
-Clone of the shipped `main` layout; its spaces block points to `better-spaces`, its agents block to `agents-dev`, its Files block to `file-icons`, its Changes slot to `better-changes`, its tab bar to `better-tabs` (its Files, Changes and Git buttons in the block's `props`), a 0px `view-mode` block at the bottom to `tkhwang-view-mode` (beside copy-on-select's), and its side panel (`panel-body`) has a third block, `graph`, for `git-graph`. Its theme is Catppuccin: `herdr-catppuccin` (Mocha) in dark mode, `herdr-catppuccin-latte` in light mode.
+Clone of the shipped `main` layout; its spaces block points to `better-spaces`, its agents block to `agents-dev`, its Files block to `file-icons`, its Changes slot to `better-changes`, its tab bar to `better-tabs` (its Files, Changes and Git buttons in the block's `props`), a 0px `view-mode` block at the bottom to `tkhwang-view-mode` (beside copy-on-select's), its side panel (`panel-body`) has a third block, `graph`, for `git-graph`, and its `work` column floats a block, `mods-update`, at its bottom center for `tkhwang-update`. Its theme is Catppuccin: `herdr-catppuccin` (Mocha) in dark mode, `herdr-catppuccin-latte` in light mode.
 
 </details>
 
@@ -158,6 +159,21 @@ The header, 44 px under the pane's own, shows the file's Material icon (from `fi
 The file is read again whenever its folder changes (`watchFolder`), and every 3 s on another machine, so an agent writing it shows up as it writes; while you have unsaved text the change waits for your choice as above.
 
 `own/shared/markdown.js` opens the tab, and `file-icons`, `better-changes`, `files-dev` and `tabs-dev` carry the same copy: `showMarkdown({ file, on, cwd, mode })` opens or reuses the space's tab with `tab.new {mod: "tkhwang-markdown"}`, records it in the shared `markdown-tab.tabs` (`{ space: { tab, slot, cwd, on } }`) and what it shows in `tkhwang-markdown.show` (`{ slot: { file, on, mode, at } }`; a newer `at` is another click); `markdownTab(space)` and `markdownShown(space)` tell the panels which tab it is and which file it shows. While the tab is shown, Files, Changes and Git keep showing the folder the file was opened from (`cwd`), and Files lights the file's row.
+
+</details>
+
+<details>
+<summary><b><code>own/mods/tkhwang-update</code></b> · the update pill: What changed | Update</summary>
+
+What is installed is what `./sync.sh apply` recorded last in `~/.config/herdr-app/tkhwang-herdr-mods.json`: the commit it was built from, that commit's tree, the checkout's branch and whether it had uncommitted changes (a copy the pill downloaded has no `.git`; its commit and tree come in `TKHWANG_HERDR_MODS_COMMIT` and `TKHWANG_HERDR_MODS_TREE`). Every 3 hours the mod asks GitHub's public API for `main`'s newest commit (`commits/main`, no token), and when that commit or the installed one is new, for what `main` has over the installed commit (`compare`). The record is read every minute, so an `apply` from a checkout counts at once.
+
+When `main` has something the app doesn't, a pill floats at the bottom center of the window, over the status bar (Herdr's own "Updated to …" pill takes its right end): `● Update for tkhwang-herdr-mods  3 new commits  What changed  Update  ×`. Nothing shows when the installed commit is `main`'s, has the same tree (a branch applied before its pull request was merged with a merge commit), or has everything `main` has (work on top of it, not merged yet). Nor does it when GitHub can't compare the two (it doesn't have the installed commit, applied from one never pushed, or it didn't answer): `main` may then be behind what is installed, and the window says so. × puts that commit off; the next commit on `main` brings the pill back. Like any floating block, it can be dragged to another edge.
+
+**Update** downloads the commit (`codeload.github.com/tkhwang/tkhwang-herdr-mods/tar.gz/<commit>`) into a temporary folder and runs that copy's `./sync.sh apply` against the app folder. It runs detached, so it finishes even when it reloads this mod or Herdr restarts, and writes its output to a new `~/.config/herdr-app/tkhwang-herdr-mods.log` each time. The pill spins (`Updating tkhwang-herdr-mods…`) for as long as that process runs, so a second update can't start beside it; then it says `Updated tkhwang-herdr-mods to <commit>`, with "restart Herdr for the new mods" when `apply` made a mod folder that wasn't there (Herdr loads one at its next start), or `tkhwang-herdr-mods update failed` (`didn't finish` when the process ended without saying how: killed, or with the machine) with **Details** (what it printed) and **Retry**, until ×, which also puts that commit off. As with any `apply`, each file it replaces is moved to `~/.config/herdr-app.bak-<time>-<pid>/` first, so changes made in the app since the last `backup` end up there.
+
+**What changed** opens a window with the pull requests (`#11` and the title from its merge commit) and their commits, newest first, each opening on GitHub at a click, and **Later** (as ×), **GitHub** (the compare page), **Stop checking** (no more requests) and **Update now**. `herdr-app do mod.open --name tkhwang-update` opens the window whatever it has to say (what is installed, when GitHub was asked, the last error), where **Check now** asks GitHub at once and starts checking again after Stop checking. While the pill shows, it also takes `tkhwang-update.open`, `tkhwang-update.check` and `tkhwang-update.update` (installs what is offered) from `herdr-app do` or a key in `keys.json`; none is bound.
+
+Its state is the shared `tkhwang-update`. What it checks is `REPO` and `BRANCH` in `model.js`: a fork changes `REPO`.
 
 </details>
 
