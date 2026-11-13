@@ -151,7 +151,10 @@ backup() {
   while IFS= read -r m; do
     [ -d "$live/mods/$m" ] || die "missing mod: $live/mods/$m"
     mkdir -p "$here/own/mods/$m"
-    rsync -a --delete "${EXCLUDE[@]}" "$live/mods/$m/" "$here/own/mods/$m/"
+    # Its shared files go back to own/shared/ (below), not into own/mods/.
+    local shared=()
+    while IFS= read -r f; do shared+=(--exclude "/$f"); done < <(shared_of "$m")
+    rsync -a --delete "${EXCLUDE[@]}" ${shared[@]+"${shared[@]}"} "$live/mods/$m/" "$here/own/mods/$m/"
   done < <(own_mods)
   while IFS= read -r f; do cp "$TMP/shared/$f" "$here/own/shared/$f"; done < <(all_shared)
   while IFS= read -r f; do

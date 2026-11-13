@@ -97,7 +97,7 @@
           "license": "file-icons"
         }
       ],
-      "shared": ["markdown.js", "panel-folder.js"]
+      "shared": ["markdown.js", "panel-folder.js", "syntax.js"]
     },
     "better-tabs": {
       "kind": "oss",
@@ -161,7 +161,8 @@
       "kind": "own"
     },
     "tkhwang-markdown": {
-      "kind": "own"
+      "kind": "own",
+      "shared": ["syntax.js"]
     },
     "tkhwang-update": {
       "kind": "own"

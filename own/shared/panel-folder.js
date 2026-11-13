@@ -3,8 +3,8 @@
 // tab's first pane, window 1 of the tab bar's 1 | 2 switch, whichever pane runs the agent.
 // The folder bar under each panel's header picks another of the tab's panes, or any folder on
 // this machine, for that tab; a pick holds until another one is made, and a picked pane that
-// closes hands back to the main pane. A tab with no terminal (the Changes diff tab, the
-// Markdown viewer tab) keeps the folder it was opened from. The same file lives in files-dev,
+// closes hands back to the main pane. A tab with no terminal (the Changes diff tab, the file
+// tab) keeps the folder it was opened from. The same file lives in files-dev,
 // better-changes and git-graph: keep the copies the same.
 import { div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
@@ -22,7 +22,7 @@ const tilde = (cwd, on) => (!on && cwd.startsWith(home() + "/") ? "~" + cwd.slic
 const stop = (_e, cx) => cx.stop_propagation();
 
 // The shown space and tab, and the tab's terminal panes in pane order (a mod pane, such as a
-// diff or a Markdown file, has no folder).
+// diff or the file tab, has no folder).
 function shown() {
   const space = spaces().find((s) => s.active) ?? null;
   const tab = space?.tabs?.find((t) => t.active) ?? null;
@@ -33,8 +33,8 @@ function shown() {
 // A tab's main pane: its first pane (window 1 of the tab bar's 1 | 2 switch).
 export const mainPane = (terms) => terms[0] ?? null;
 
-// Where a tab with no terminal was opened from: the Markdown viewer tab's folder (markdown.js),
-// or the repository of the Changes diff tab (better-changes).
+// Where a tab with no terminal was opened from: the file tab's folder (markdown.js), or the
+// repository of the Changes diff tab (better-changes).
 function viewerFolder(space, tab) {
   const md = (shared("markdown-tab.tabs") ?? {})[space.id];
   if (md?.tab === tab.id && md.cwd) return { cwd: md.cwd, on: md.on ?? null };
