@@ -1,20 +1,24 @@
-// tkhwang-markdown: a Markdown file in the center, in a tab of its own, with View | Diff | Edit in
-// its header. View draws the file formatted; Diff shows what changed since the last commit (HEAD to
-// the file on disk); Edit opens the whole file as Markdown source, saved 0.7 s after typing stops
-// and on ⌘S, never over a change made to the file meanwhile: a bar asks which one stays.
+// tkhwang-markdown: the file tab. A file in the center, in a tab of its own, with View | Diff | Edit
+// in its header. View draws a Markdown file formatted, and any other file as its source in syntax
+// colors, read only; Diff shows what changed since the last commit (HEAD to the file on disk), in
+// the same colors; Edit opens the whole file in Herdr's editor, saved 0.7 s after typing stops and
+// on ⌘S, never over a change made to the file meanwhile: a bar asks which one stays.
 //
-// One tab per space, reused in place. A click on a Markdown file in Files (file-icons) opens it on
-// View, one in Changes (better-changes) on Diff, through markdown.js, which those mods carry: it
-// records the tab in the shared "markdown-tab.tabs" and what it shows in "tkhwang-markdown.show"
-// ({ slot: { file, on, mode, at } }). This pane reads its slot there; a newer `at` is another
-// click. `on` is the machine the file is on (null: this one). A file on another machine is read
-// only (writeTextFile writes here only) and read again every 3 s (watchFolder watches here only).
+// One tab per space, reused in place. A click on a file in Files (file-icons) opens it on View, one
+// on a Markdown file in Changes (better-changes) on Diff, through markdown.js, which those mods
+// carry: it records the tab in the shared "markdown-tab.tabs" and what it shows in
+// "tkhwang-markdown.show" ({ slot: { file, on, mode, at, icon } }). This pane reads its slot there;
+// a newer `at` is another click. `on` is the machine the file is on (null: this one). A file on
+// another machine is read only (writeTextFile writes here only) and read again every 3 s
+// (watchFolder watches here only). syntax.js (shared with better-changes) colors the diff and names
+// the language Herdr's editor is given.
 //
 // Commands (`herdr-app do tkhwang-markdown.<name>`, or a key in keys.json): view, diff, edit, save.
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, TextView, Editor, EditorState, v_virtual_list, Scrollbar } from "gpui-base";
 import { props, shared, setShared, readTextFile, writeTextFile, watchFolder, exec, theme, settings, run, home, window, nextCommand } from "herdr";
 import { MARKDOWN, MAX_TEXT, dirOf, nameOf, tildePath, prose, linkTarget, diffRows, addedLines, hunks, bounded, counts } from "./model.js";
+import { languageOf, editorLanguage, editorSyntax, syntaxColors, highlightDiff } from "./syntax.js";
 
 const SHOW = "tkhwang-markdown.show";
 const TABS = "markdown-tab.tabs";
@@ -30,10 +34,15 @@ const REMOTE_POLL_MS = 3000;
 // them; non-ASCII names stay as they are.
 const GIT = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.quotePath=false"];
 const DIFF = ["--no-ext-diff", "--no-textconv", "--no-color"];
-// file-icons' Material icon for .md (it has no light variant), so the header matches Files and
-// Changes; file-icons has to stay installed, as better-changes needs too.
-const FILE_ICON = "mods/file-icons/icons/markdown.svg";
+// file-icons' Material icons, so the header matches Files and Changes: the one the panel that
+// opened the file names (show's `icon`), else .md's (it has no light variant) or a plain file's.
+// file-icons has to stay installed, as better-changes needs too.
+const MARKDOWN_ICON = "mods/file-icons/icons/markdown.svg";
+const FILE_ICON = "mods/file-icons/icons/file.svg";
 const CODE_SIZE = 13;
+// How strong a changed line's band is in Diff when its text is in syntax colors (hex alpha on the
+// line's green or red): stronger than the "18" under a line whose text is green or red itself.
+const BAND = "26";
 
 export default class MarkdownTab extends View {
   init(_props, cx) {
@@ -43,7 +52,7 @@ export default class MarkdownTab extends View {
     this.diffToken = 0;
     const entry = this.entry();
     this.applied = entry?.at ?? null;
-    this.open(entry?.file ?? p.file ?? null, entry?.on ?? p.on ?? null, entry?.mode ?? p.mode, cx);
+    this.open(entry?.file ?? p.file ?? null, entry?.on ?? p.on ?? null, entry?.mode ?? p.mode, entry?.icon ?? p.icon, cx);
     this.listen(cx);
   }
 
@@ -67,11 +76,13 @@ export default class MarkdownTab extends View {
 
   // ── The file ───────────────────────────────────────────────────────────────
 
-  open(file, on, mode, cx) {
+  open(file, on, mode, icon, cx) {
     this.gen++;
     this.file = file;
     this.on = on ?? null;
     this.mode = isMode(mode) ? mode : "view";
+    this.markdown = MARKDOWN.test(file ?? ""); // View draws it formatted; any other file as source
+    this.fileIcon = icon ?? null; // { dark, light }, from the panel that opened it
     this.saved = null; // the file as last read or written: what a save expects to find on disk
     this.text = null; // the text shown: the editor's when it differs from `saved`
     this.disk = null; // the file's newer text, while a conflict is open
@@ -87,6 +98,8 @@ export default class MarkdownTab extends View {
     this.savedAt = null;
     this.editor?.release();
     this.editor = null;
+    this.viewer?.release();
+    this.viewer = null;
     this.diff = null;
     this.diffToken++;
     this.diffLoading = false;
@@ -130,6 +143,7 @@ export default class MarkdownTab extends View {
         this.text = text;
         this.big = text.length > MAX_TEXT;
         this.showInEditor(text);
+        this.showInViewer(text);
         if (this.mode === "diff") this.loadDiff(cx);
       } catch (error) {
         if (gen === this.gen) this.error = `Cannot read this file: ${error?.message ?? error}`;
@@ -164,17 +178,38 @@ export default class MarkdownTab extends View {
     const t = theme();
     this.editorReadonly = !this.canEdit;
     this.editor = EditorState.new({
-      language: "markdown",
+      language: this.markdown ? "markdown" : editorLanguage(this.file),
       value: this.text,
       readonly: !this.canEdit,
-      soft_wrap: true,
+      soft_wrap: this.markdown, // prose wraps; code keeps its lines
       font_family: settings().font_family,
       font_size: CODE_SIZE,
       // Herdr colors only code scopes (its syntax.rs), so in Markdown just the marks (# ** ` - > [ ]
-      // and fences) are "punctuation"; headings, emphasis, inline code and URLs stay plain text.
-      syntax: { keyword: t.ansi5, string: t.ansi2, comment: t.dim, function: t.ansi4, type: t.ansi3, number: t.ansi1, constant: t.ansi6, punctuation: t.accent },
+      // and fences) are "punctuation"; headings, emphasis, inline code and URLs stay plain text. In
+      // code, punctuation keeps the text color.
+      syntax: this.markdown ? { ...editorSyntax(t), punctuation: t.accent } : editorSyntax(t),
     });
     this.editor.on("change", (_e, cx) => this.changed(cx));
+  }
+
+  // file tab: what View shows of a file that isn't Markdown: its source in Herdr's editor, read only,
+  // in syntax colors (the language from its name, syntax.js), as far as MAX_TEXT. It shows what is
+  // in Edit, saved or not, like the Markdown View. Made from an event or a task (never in render).
+  showInViewer(text) {
+    if (this.markdown || text === null) return;
+    const value = text.length > MAX_TEXT ? text.slice(0, MAX_TEXT) + "\n… (file truncated)" : text;
+    if (this.viewer) {
+      if (this.viewer.value() !== value) this.viewer.set_value(value);
+      return;
+    }
+    this.viewer = EditorState.new({
+      language: editorLanguage(this.file),
+      value,
+      readonly: true,
+      font_family: settings().font_family,
+      font_size: CODE_SIZE,
+      syntax: editorSyntax(theme()),
+    });
   }
 
   // Puts the file's new text in the editor. Its read-only setting is fixed when it is made, so it
@@ -276,6 +311,9 @@ export default class MarkdownTab extends View {
     this.disk = null;
     this.seq++;
     this.showInEditor(disk);
+    // file tab: View of a source file shows the file's text now, not the edit just dropped; the
+    // reads that follow find it saved and leave the viewer alone.
+    this.showInViewer(disk);
     if (this.mode === "diff") this.loadDiff(cx);
     cx.notify();
   }
@@ -287,6 +325,7 @@ export default class MarkdownTab extends View {
     const was = this.mode;
     this.mode = mode;
     if (mode === "edit") this.ensureEditor();
+    if (mode === "view") this.showInViewer(this.text);
     // Leaving Edit saves first; Diff then shows the file as saved (write() reloads it).
     if (was === "edit" && mode !== "edit" && this.dirty) this.save(cx);
     else if (mode === "diff") this.loadDiff(cx);
@@ -312,8 +351,8 @@ export default class MarkdownTab extends View {
     }
   }
 
-  // A link to another Markdown file opens it in this tab, on View, as a click in Files would; an
-  // http(s) URL opens in the system's browser (open_url takes nothing else).
+  // A link to another file opens it in this tab, on View, as a click in Files would; an http(s) URL
+  // opens in the system's browser (open_url takes nothing else).
   link(url, cx) {
     const to = linkTarget(url, this.file);
     if (to?.web) {
@@ -322,7 +361,7 @@ export default class MarkdownTab extends View {
       } catch {
         // mailto: and the like are refused.
       }
-    } else if (to?.file && MARKDOWN.test(to.file)) {
+    } else if (to?.file) {
       setShared(SHOW, { ...(shared(SHOW) ?? {}), [this.slot]: { file: to.file, on: this.on, mode: "view", at: Date.now() } });
       const record = this.record();
       if (record) run("tab.rename", { id: record.tab, name: nameOf(to.file) });
@@ -346,7 +385,7 @@ export default class MarkdownTab extends View {
       return;
     }
     this.applied = entry.at;
-    this.open(entry.file, entry.on ?? null, entry.mode ?? this.mode, cx);
+    this.open(entry.file, entry.on ?? null, entry.mode ?? this.mode, entry.icon, cx);
     cx.notify();
   }
 
@@ -368,6 +407,7 @@ export default class MarkdownTab extends View {
       }
     }
     this.editor?.release();
+    this.viewer?.release();
   }
 
   // ── Diff ───────────────────────────────────────────────────────────────────
@@ -410,6 +450,7 @@ export default class MarkdownTab extends View {
           if (!diff) {
             const { lines: shown, cut } = bounded(lines);
             const rows = diffRows(shown);
+            highlightDiff(rows, languageOf(file)); // syntax colors
             const widest = Math.max(0, ...shown.map((line) => line.length));
             diff = { root, what, rows, cut, ...counts(rows), width: Math.max(300, widest * CODE_SIZE * 0.62 + 120) };
           }
@@ -450,11 +491,12 @@ export default class MarkdownTab extends View {
       .on_key_down((e, cx) => this.key(e, cx))
       .child(this.header(t));
     if (this.conflict) root.child(this.conflictBar(t, asked));
-    if (!this.file) return root.child(this.note(t, "Click a Markdown file in Files or Changes to show it here."));
+    if (!this.file) return root.child(this.note(t, "Click a file in Files, or a Markdown file in Changes, to show it here."));
     if (this.error) root.child(div().px(16).py(8).flex_none().text_color(t.blocked).child(this.error));
     if (this.mode === "diff") return root.child(this.diffBody(t));
     if (this.text === null) return root.child(this.error ? div() : this.note(t, "Loading…"));
-    return root.child(this.mode === "edit" ? this.editBody(t) : this.viewBody());
+    if (this.mode === "edit") return root.child(this.editBody(t));
+    return root.child(this.markdown ? this.viewBody() : this.sourceBody(t));
   }
 
   header(t) {
@@ -468,18 +510,24 @@ export default class MarkdownTab extends View {
       .items_center()
       .border_b(1)
       .border_color(t.border)
-      .child(image(FILE_ICON).size(16).flex_none())
+      .child(image(this.iconPath()).size(16).flex_none())
       .child(
         v_flex()
           .flex_1()
           .min_w(0)
-          .child(div().font_semibold().truncate().child(this.file ? nameOf(this.file) : "Markdown"))
+          .child(div().font_semibold().truncate().child(this.file ? nameOf(this.file) : "File"))
           .when(Boolean(this.file), (el) => el.child(div().id("md-where").text_size(11).text_color(t.dim).truncate().tooltip(this.file).child(where))),
       )
       .when(Boolean(this.file), (el) => el.child(this.modeSwitch(t)))
       .child(div().w(72).flex_none().text_size(11.5).text_color(t.dim).text_right().child(this.state()))
       .when(Boolean(this.file), (el) => el.child(this.icon("md-refresh", "refresh", "Read the file again", (cx) => this.refresh(cx), t)))
       .child(this.icon("md-close", "close", "Close this tab", () => this.closeTab(), t));
+  }
+
+  // The file's icon in the theme's lightness: the one it was opened with, else .md's or a plain file's.
+  iconPath() {
+    const given = this.fileIcon?.[settings().dark ? "dark" : "light"] ?? this.fileIcon?.dark;
+    return given || (this.markdown ? MARKDOWN_ICON : FILE_ICON);
   }
 
   refresh(cx) {
@@ -602,6 +650,28 @@ export default class MarkdownTab extends View {
       );
   }
 
+  // file tab: View of a file that isn't Markdown.
+  sourceBody(t) {
+    if (!this.viewer) return this.note(t, "Opening the file…");
+    return v_flex()
+      .flex_1()
+      .min_h(0)
+      .when(this.big, (el) =>
+        el.child(
+          div()
+            .px(16)
+            .py(6)
+            .flex_none()
+            .text_size(11.5)
+            .text_color(t.dim)
+            .border_b(1)
+            .border_color(t.border)
+            .child("This file is large: View shows its first 400,000 characters."),
+        ),
+      )
+      .child(Editor.new(this.viewer).flex_1().min_h(0));
+  }
+
   editBody(t) {
     if (!this.editor) return this.note(t, "Opening the editor…");
     return v_flex()
@@ -645,6 +715,7 @@ export default class MarkdownTab extends View {
     if (!diff.rows) return body.child(this.note(t, diff.note));
     const height = Math.ceil(CODE_SIZE * 1.6);
     const rows = diff.rows;
+    const colors = syntaxColors(t);
     // Kept across reloads, so the list stays where it was scrolled while an agent writes the file.
     const listId = `md-diff-${this.slot}-${this.file}`;
     const font = settings().font_family; // the terminals' font, if set
@@ -670,7 +741,7 @@ export default class MarkdownTab extends View {
                   rows.length,
                   height,
                   (i) => String(i),
-                  (range) => rows.slice(range.start, range.end).map((row) => this.diffRow(row, t, height)),
+                  (range) => rows.slice(range.start, range.end).map((row) => this.diffRow(row, t, height, colors)),
                 ).size_full(),
               ),
           ),
@@ -682,7 +753,9 @@ export default class MarkdownTab extends View {
     return body;
   }
 
-  diffRow(row, t, height) {
+  // A line in syntax colors (syntax.js) sits on its green or red band; the text of a language
+  // syntax.js doesn't know is green or red itself, as before.
+  diffRow(row, t, height, colors) {
     if (row.kind === "@" || row.kind === "\\")
       return div().h(height).px(12).w_full().flex().items_center().bg(t.raised).text_color(row.kind === "@" ? t.accent : t.dim).child(row.text);
     const color = row.kind === "+" ? t.ansi2 : row.kind === "-" ? t.ansi1 : t.foreground;
@@ -692,10 +765,18 @@ export default class MarkdownTab extends View {
       .w_full()
       .gap(8)
       .items_center()
-      .when(row.kind !== " ", (el) => el.bg(color + "18"))
+      .when(row.kind !== " ", (el) => el.bg(color + (row.spans ? BAND : "18")))
       .child(number(row.old))
       .child(number(row.next))
       .child(div().w(12).flex_none().text_color(color).child(row.kind === " " ? "" : row.kind))
-      .child(div().flex_1().min_w(0).whitespace_nowrap().text_color(color).child(row.text || " "));
+      .child(codeLine(row.spans, row.text, colors, row.spans ? t.foreground : color).flex_1().min_w(0));
   }
+}
+
+// A line of text: its runs (syntax.js) each in its kind's color, plain runs and a line with no runs
+// in `base`.
+function codeLine(spans, text, colors, base) {
+  const line = h_flex().whitespace_nowrap().text_color(base);
+  if (!spans?.length) return line.child(text || " ");
+  return line.children(spans.map(([kind, part]) => (kind ? div().flex_none().text_color(colors[kind] ?? base).child(part) : div().flex_none().child(part))));
 }

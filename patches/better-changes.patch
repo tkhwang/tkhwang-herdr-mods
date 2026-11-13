@@ -6,10 +6,10 @@ index 0000000..037f6c8
 @@ -0,0 +1 @@
 +<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
 diff --git a/main.js b/main.js
-index a893bae..727d952 100644
+index a893bae..042c541 100644
 --- a/main.js
 +++ b/main.js
-@@ -1,9 +1,32 @@
+@@ -1,9 +1,34 @@
 +// Changed from munza/herdr-mods@77d94f7: a repo picker for workbranch wrapper folders
 +// (code marked "wrapper repos"), a multi-line commit message box with the buttons under it
 +// (marked "commit box"), a button that asks an AI for the commit message (marked "ai message"),
@@ -18,7 +18,8 @@ index a893bae..727d952 100644
 +// markdown.js), the folder Files and Git show too, with the folder bar under the header (marked "panel folder", with
 +// panel-folder.js), the panel and its diff tab in the font, size and line height the layout's Changes
 +// block sets (marked "changes font", with typography.js), file and folder icons from file-icons' Material
-+// Icon Theme set (marked "file icons", with its lookup.js and icons.js), and mod.json "place" is "none" (it
++// Icon Theme set (marked "file icons", with its lookup.js and icons.js), the diff's code in syntax colors
++// on its green and red bands (marked "syntax colors", with syntax.js), and mod.json "place" is "none" (it
 +// sits in the Changes slot).
  // Sidebar status/commit controls and a reusable diff-tab view share this class.
  // Pure Git-output parsing and diff-row transformations live in model.js.
@@ -41,12 +42,13 @@ index a893bae..727d952 100644
 +// file icons: a copy of file-icons' lookup (a mod can't import another's files); the SVGs it names
 +// are read from the installed file-icons mod, so that mod has to be installed too.
 +import { icon as fileIcon } from "./lookup.js";
++import { languageOf, highlightDiff, syntaxColors } from "./syntax.js"; // syntax colors
 +import { View, div, svg, image } from "gpui-kit";
 +import { v_flex, h_flex, TextareaState, Textarea, Scrollbar, v_virtual_list } from "gpui-base";
  import {
    spaces,
    panes,
-@@ -18,8 +41,14 @@ import {
+@@ -18,8 +43,31 @@ import {
    run,
    layout,
    nextCommand,
@@ -58,10 +60,27 @@ index a893bae..727d952 100644
 +const pathIcon = (path, dir = false, open = false) =>
 +  image(fileIcon(path, dir, open, Boolean(settings().dark))).size(16).flex_none();
 +
++// syntax colors: a diff line's text in the colors of its runs (syntax.js), plain runs and a line
++// with no runs (a language syntax.js doesn't know) in `base`: the text color on a line in syntax
++// colors, whose band then shows what changed, else the line's green or red, as upstream. BAND is
++// that band (hex alpha on the green or red), stronger than upstream's "18" under green or red text.
++const BAND = "26";
++function codeLine(spans, text, colors, base) {
++  const line = h_flex().whitespace_nowrap().text_color(base);
++  if (!spans?.length) return line.child(text || " ");
++  return line.children(
++    spans.map(([kind, part]) =>
++      kind
++        ? div().flex_none().text_color(colors[kind] ?? base).child(part)
++        : div().flex_none().child(part),
++    ),
++  );
++}
++
  // Status polling must not take optional index locks or trigger filesystem-monitor
  // helpers. Diff reads also disable external diff/textconv helpers at the call site.
  const READ_ONLY_GIT_OPTIONS = [
-@@ -29,33 +58,75 @@ const READ_ONLY_GIT_OPTIONS = [
+@@ -29,33 +77,75 @@ const READ_ONLY_GIT_OPTIONS = [
    "-c",
    "diff.autoRefreshIndex=false",
  ];
@@ -147,7 +166,7 @@ index a893bae..727d952 100644
  // One View class serves two roles: a sidebar and a regular diff tab. Each copy
  // owns its local state; shared("better-changes.*") connects the separate copies.
  export default class Changes extends View {
-@@ -72,20 +143,30 @@ export default class Changes extends View {
+@@ -72,20 +162,30 @@ export default class Changes extends View {
        (localStorage.getItem("better-changes.diff-layout") === "split" ? "split" : "inline");
      if (this.mode === "sidebar" || !shared("better-changes.diff-layout"))
        setShared("better-changes.diff-layout", this.diffLayout);
@@ -180,7 +199,7 @@ index a893bae..727d952 100644
      this.startPolling(cx);
      this.listenForCommands(cx);
      this.refresh(cx);
-@@ -168,7 +249,63 @@ export default class Changes extends View {
+@@ -168,7 +268,63 @@ export default class Changes extends View {
        ? ((shared("better-changes.diff-tabs") ?? {})[this.diffSpace]?.source ??
            this.source ??
            location())
@@ -245,7 +264,7 @@ index a893bae..727d952 100644
    }
  
    // Include both cwd and machine: identical paths on different machines are
-@@ -213,6 +350,8 @@ export default class Changes extends View {
+@@ -213,6 +369,8 @@ export default class Changes extends View {
        this.error = null;
        this.note = null;
        this.watched = null;
@@ -254,7 +273,7 @@ index a893bae..727d952 100644
        this.message = "";
        this.input.set_value("");
      }
-@@ -224,6 +363,23 @@ export default class Changes extends View {
+@@ -224,6 +382,23 @@ export default class Changes extends View {
          const top = await this.git(["rev-parse", "--show-toplevel"], cwd, on);
          if (context !== this.contextKey()) return;
          if (top.code !== 0) {
@@ -278,7 +297,7 @@ index a893bae..727d952 100644
            this.root = null;
            this.files = [];
            this.rows = [];
-@@ -249,7 +405,20 @@ export default class Changes extends View {
+@@ -249,7 +424,20 @@ export default class Changes extends View {
          ];
          for (const stat of stats)
            if (stat.code !== 0) throw Error(stat.stderr || "Cannot read change statistics");
@@ -299,7 +318,7 @@ index a893bae..727d952 100644
          const files = changedFiles(
            status.stdout,
            stats.map((r) => r.stdout),
-@@ -269,14 +438,72 @@ export default class Changes extends View {
+@@ -269,14 +457,72 @@ export default class Changes extends View {
            if (this.path && !this.diffLoading) this.loadDiff(cx);
          }
        } catch (error) {
@@ -373,7 +392,7 @@ index a893bae..727d952 100644
    watch(root, cx) {
      if (this.on || this.watched === root) return;
      this.watched = root;
-@@ -304,10 +531,18 @@ export default class Changes extends View {
+@@ -304,10 +550,18 @@ export default class Changes extends View {
        scope,
        at: Date.now(),
      };
@@ -393,7 +412,26 @@ index a893bae..727d952 100644
      const name = file.path.split("/").pop();
      // Publish before opening/selecting the tab so its View sees the latest pick.
      // A pending timestamp prevents rapid clicks from creating duplicate tabs.
-@@ -486,7 +721,7 @@ export default class Changes extends View {
+@@ -469,7 +723,17 @@ export default class Changes extends View {
+           .map((line) =>
+             line.length > MAX_LINE_LENGTH ? line.slice(0, MAX_LINE_LENGTH) + "…" : line,
+           );
+-        this.rows = diffRows(visible);
++        // syntax colors: the same diff again (a refresh after another file changed) keeps its
++        // colored rows rather than coloring them again.
++        const same =
++          this.rows.length > 0 &&
++          this.rowsSource?.length === visible.length &&
++          this.rowsSource.every((line, i) => line === visible[i]);
++        if (!same) {
++          this.rows = diffRows(visible);
++          highlightDiff(this.rows, languageOf(path));
++          this.rowsSource = visible;
++        }
+         this.width = Math.max(300, ...visible.map((line) => line.length * em(0.7) + 110));
+       } catch (error) {
+         if (token === this.diffToken && context === this.contextKey()) {
+@@ -486,7 +750,7 @@ export default class Changes extends View {
    }
    // ── Git mutations (sidebar only) ──────────────────────────────────────────
  
@@ -402,7 +440,7 @@ index a893bae..727d952 100644
    // commit there is no HEAD, so remove index entries with git rm --cached.
    // Literal pathspecs keep names such as [sample].txt from acting as patterns.
    indexAction(action, path, cx) {
-@@ -537,6 +772,147 @@ export default class Changes extends View {
+@@ -537,6 +801,147 @@ export default class Changes extends View {
      });
    }
  
@@ -550,7 +588,7 @@ index a893bae..727d952 100644
    // Commit the existing index, not all working-tree edits. On failure, keep the
    // message so the user can fix the problem and retry without retyping it.
    commit(cx) {
-@@ -580,6 +956,130 @@ export default class Changes extends View {
+@@ -580,6 +985,130 @@ export default class Changes extends View {
        }
      });
    }
@@ -681,7 +719,7 @@ index a893bae..727d952 100644
    // ── Shared controls and file rows ─────────────────────────────────────────
  
    icon(id, asset, label, action, t, active = false, disabled = false, size = 24) {
-@@ -615,7 +1115,7 @@ export default class Changes extends View {
+@@ -615,7 +1144,7 @@ export default class Changes extends View {
      const selected = this.currentSelection();
      return h_flex()
        .id(`change-${scope}-${file.path}`)
@@ -690,7 +728,7 @@ index a893bae..727d952 100644
        .flex_none()
        .pl(8 + depth * 14)
        .pr(8)
-@@ -632,7 +1132,7 @@ export default class Changes extends View {
+@@ -632,7 +1161,7 @@ export default class Changes extends View {
        .hover((s) => s.bg(t.hover))
        .tooltip(file.path)
        .on_click((_e, cx) => this.pick(file, cx, scope))
@@ -699,7 +737,7 @@ index a893bae..727d952 100644
        .child(div().flex_1().min_w(0).truncate().child(name))
        .when(flat && parts.length > 0, (el) =>
          el.child(
-@@ -658,6 +1158,18 @@ export default class Changes extends View {
+@@ -658,6 +1187,18 @@ export default class Changes extends View {
            )
            .child(file.status),
        )
@@ -718,7 +756,7 @@ index a893bae..727d952 100644
        .when(scope !== "all", (el) =>
          el.child(
            this.icon(
-@@ -722,6 +1234,8 @@ export default class Changes extends View {
+@@ -722,6 +1263,8 @@ export default class Changes extends View {
  
    render() {
      const t = theme();
@@ -727,7 +765,7 @@ index a893bae..727d952 100644
      const root = v_flex()
        .size_full()
        .min_h(0)
-@@ -731,17 +1245,76 @@ export default class Changes extends View {
+@@ -731,17 +1274,76 @@ export default class Changes extends View {
        .border_color(t.border)
        .bg(t.background)
        .text_color(t.foreground)
@@ -805,7 +843,7 @@ index a893bae..727d952 100644
    renderSidebarHeader(t) {
      const head = h_flex()
        .h(44)
-@@ -830,6 +1403,18 @@ export default class Changes extends View {
+@@ -830,6 +1432,18 @@ export default class Changes extends View {
            .child(div().font_semibold().text_size(em(0.9)).child(label))
            .child(div().text_size(em(0.8)).text_color(t.dim).child(String(count)))
            .child(div().flex_1())
@@ -824,7 +862,7 @@ index a893bae..727d952 100644
            .child(
              this.icon(
                `changes-${action}-all`,
-@@ -892,7 +1477,7 @@ export default class Changes extends View {
+@@ -892,7 +1506,7 @@ export default class Changes extends View {
      const chevron = this.closed.has(closedKey) ? "chevron-right" : "chevron-down";
      return h_flex()
        .id(`changes-folder-${scope}-${row.path}`)
@@ -833,7 +871,7 @@ index a893bae..727d952 100644
        .pl(8 + row.depth * 14)
        .gap(6)
        .flex_none()
-@@ -900,22 +1485,130 @@ export default class Changes extends View {
+@@ -900,22 +1514,130 @@ export default class Changes extends View {
        .rounded(5)
        .cursor_pointer()
        .hover((el) => el.bg(t.hover))
@@ -967,7 +1005,7 @@ index a893bae..727d952 100644
        this.stagedCount &&
        !this.conflicts,
      );
-@@ -925,53 +1618,65 @@ export default class Changes extends View {
+@@ -925,53 +1647,65 @@ export default class Changes extends View {
        .flex_none()
        .border_t(1)
        .border_color(t.border)
@@ -1055,7 +1093,7 @@ index a893bae..727d952 100644
            ),
        );
    }
-@@ -999,7 +1704,11 @@ export default class Changes extends View {
+@@ -999,7 +1733,11 @@ export default class Changes extends View {
        .flex_none()
        .border_b(1)
        .border_color(t.border)
@@ -1068,7 +1106,7 @@ index a893bae..727d952 100644
        .child(
          div()
            .flex_1()
-@@ -1061,7 +1770,7 @@ export default class Changes extends View {
+@@ -1061,7 +1799,7 @@ export default class Changes extends View {
        root.child(
          div().p(14).text_color(t.dim).child("Select a changed file in Changes to view its diff."),
        );
@@ -1077,9 +1115,11 @@ index a893bae..727d952 100644
      const split = this.diffLayout === "split";
      if (split)
        root.child(
-@@ -1117,11 +1826,12 @@ export default class Changes extends View {
+@@ -1116,12 +1854,14 @@ export default class Changes extends View {
+       this.pairedRows = splitDiffRows(this.rows);
      }
      const rows = split ? this.pairedRows : this.rows;
++    const colors = syntaxColors(t); // syntax colors
      const listId = `factory-diff-${this.context}-${this.path}-${this.scope}-${this.diffLayout}`;
 +    const font = changesFont() ?? codeFont(); // changes font
      const viewport = div()
@@ -1091,6 +1131,94 @@ index a893bae..727d952 100644
        .text_size(em(1));
      if (split)
        viewport.child(
+@@ -1130,7 +1870,7 @@ export default class Changes extends View {
+           rows.length,
+           height,
+           (i) => String(i),
+-          (range) => rows.slice(range.start, range.end).map((row) => this.splitRow(row, t, height)),
++          (range) => rows.slice(range.start, range.end).map((row) => this.splitRow(row, t, height, colors)),
+         )
+           .size_full()
+           .on_scroll_wheel((e, cx) => {
+@@ -1159,7 +1899,9 @@ export default class Changes extends View {
+                   height,
+                   (i) => String(i),
+                   (range) =>
+-                    rows.slice(range.start, range.end).map((row) => this.diffRow(row, t, height)),
++                    rows
++                      .slice(range.start, range.end)
++                      .map((row) => this.diffRow(row, t, height, colors)),
+                 ).size_full(),
+               ),
+           ),
+@@ -1187,7 +1929,7 @@ export default class Changes extends View {
+     cx.notify();
+   }
+ 
+-  splitRow(row, t, height) {
++  splitRow(row, t, height, colors) {
+     if (row.kind !== "pair")
+       return div()
+         .h(height)
+@@ -1213,7 +1955,7 @@ export default class Changes extends View {
+           .items_center()
+           .overflow_hidden()
+           .when(side === "right", (el) => el.border_l(1).border_color(t.border))
+-          .when(changed, (el) => el.bg(color + "18"))
++          .when(changed, (el) => el.bg(color + (entry.spans ? BAND : "18"))) // syntax colors
+           .when(!entry, (el) => el.bg(t.raised))
+           .child(
+             div()
+@@ -1237,13 +1979,11 @@ export default class Changes extends View {
+               .overflow_hidden()
+               .tooltip(entry?.text || "")
+               .child(
+-                div()
++                // syntax colors
++                codeLine(entry?.spans, entry?.text, colors, entry?.spans ? t.foreground : color)
+                   .w(this.width || 300)
+                   .flex_none()
+-                  .ml(-this.splitOffset)
+-                  .whitespace_nowrap()
+-                  .text_color(color)
+-                  .child(entry?.text || " "),
++                  .ml(-this.splitOffset),
+               ),
+           ),
+       );
+@@ -1251,7 +1991,7 @@ export default class Changes extends View {
+     return line;
+   }
+ 
+-  diffRow(row, t, height) {
++  diffRow(row, t, height, colors) {
+     if (row.kind === "@")
+       return div().h(height).px(12).w_full().bg(t.raised).text_color(t.accent).child(row.text);
+     const color = row.kind === "+" ? t.ansi2 : row.kind === "-" ? t.ansi1 : t.foreground;
+@@ -1260,7 +2000,7 @@ export default class Changes extends View {
+       .w_full()
+       .gap(8)
+       .items_center()
+-      .when(row.kind === "+" || row.kind === "-", (el) => el.bg(color + "18"))
++      .when(row.kind === "+" || row.kind === "-", (el) => el.bg(color + (row.spans ? BAND : "18"))) // syntax colors
+       .child(
+         div()
+           .w(38)
+@@ -1278,13 +2018,6 @@ export default class Changes extends View {
+           .child(row.next === undefined ? "" : String(row.next)),
+       )
+       .child(div().w(12).flex_none().text_color(color).child(row.kind))
+-      .child(
+-        div()
+-          .flex_1()
+-          .min_w(0)
+-          .whitespace_nowrap()
+-          .text_color(color)
+-          .child(row.text || " "),
+-      );
++      .child(codeLine(row.spans, row.text, colors, row.spans ? t.foreground : color).flex_1().min_w(0)); // syntax colors
+   }
+ }
 diff --git a/mod.json b/mod.json
 index c29d7a3..10499d8 100644
 --- a/mod.json
