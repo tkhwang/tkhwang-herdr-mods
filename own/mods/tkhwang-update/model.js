@@ -8,9 +8,6 @@ export const WEB = `https://github.com/${REPO}`;
 
 // GitHub is asked at most this often (its public API takes 60 requests an hour without a token).
 export const EVERY = 3 * 60 * 60 * 1000;
-// An update running longer than this is taken as stuck: the download, `./sync.sh apply` and its
-// `herdr-app check` of each changed mod (the first check after a restart can take minutes).
-export const RUN_LIMIT = 15 * 60 * 1000;
 // The window lists at most this many lines; GitHub's compare page has them all.
 export const MAX_LISTED = 40;
 // Lines of an update's output kept to show when it fails.
@@ -87,19 +84,34 @@ export function changesOf(json, base, head) {
 // GitHub can't compare: it doesn't have the installed commit (applied from one never pushed).
 export const unknownChanges = (base, head) => ({ base, head, ahead: null, commits: null, count: 0, more: 0 });
 
-// The update to offer, { head, changes }, or null: the branch has moved past what is installed and
-// the person hasn't stopped checking or (unless `all`) put this version off with Later.
-// `changes` is null when it isn't known for this pair (not asked yet, or GitHub didn't answer).
+// The comparison saved for exactly the installed commit and the saved head (see changesOf), or
+// null: none was made for this pair (GitHub didn't answer, or the installed commit moved since).
+function comparisonOf(s) {
+  const c = s?.changes;
+  const base = s?.installed?.commit;
+  return c && base && s.head && c.base === base && c.head === s.head.sha ? c : null;
+}
+
+// Whether what is installed has everything the saved head has: it is that commit, the same files
+// under another commit (a branch applied before its pull request was merged), or the comparison
+// shows the branch nothing ahead (work on top of it, not merged yet).
+function current(s) {
+  const { head, installed } = s ?? {};
+  if (!head) return false;
+  return installed?.commit === head.sha || (Boolean(installed?.tree) && installed.tree === head.tree) || comparisonOf(s)?.ahead === 0;
+}
+
+// The update to offer, { head, changes }, or null. Only one GitHub's comparison confirms: the
+// branch has commits the installed one lacks. Without it (no install recorded, GitHub doesn't
+// have the installed commit, or it didn't answer) the branch may be behind what is installed,
+// and installing it would go back. Nothing either once the person stopped checking or (unless
+// `all`) put this version off with Later.
 export function offerOf(s, { all = false } = {}) {
-  const { head, installed, changes, dismissed, off } = s ?? {};
-  if (!head || (off && !all)) return null;
-  if (installed?.commit === head.sha) return null;
-  // The same files under another commit: a branch applied before its pull request was merged.
-  if (installed?.tree && installed.tree === head.tree) return null;
+  const { head, dismissed, off } = s ?? {};
+  if (!head || (off && !all) || current(s)) return null;
   if (!all && dismissed === head.sha) return null;
-  const known = changes && changes.base === installed?.commit && changes.head === head.sha ? changes : null;
-  if (known?.ahead === 0) return null;
-  return { head, changes: known };
+  const known = comparisonOf(s);
+  return known?.ahead > 0 ? { head, changes: known } : null;
 }
 
 // What the pill says, or null to hide it:
@@ -120,21 +132,24 @@ export function pillOf(s) {
   return { kind: "offer", text: "Update for tkhwang-herdr-mods", note };
 }
 
-// An update run's log, as the downloader writes it: "# update <sha>" first, "# new mods: …" when
-// apply made mod folders that weren't there, "# exit <code>" last. null when the log is another
-// run's (or none); { done: false } while it runs. backup is the folder apply moved replaced files
-// to, tail the last lines it printed.
-export function runOf(text, sha) {
-  if (typeof text !== "string" || !isSha(sha)) return null;
+// A run's log, as LAUNCH and the downloader write it: "# update <sha> <at>" first (the run's
+// commit and start, which tell runs apart), "# pid <n>" (the downloader's process), "# new mods: …"
+// when apply made mod folders that weren't there, "# exit <code>" last. null when the log is
+// another run's (or none); { done: false, pid } while it runs. backup is the folder apply moved
+// replaced files to, tail the last lines it printed.
+export function runOf(text, run) {
+  if (typeof text !== "string" || !isSha(run?.sha) || !Number.isInteger(run?.at)) return null;
   const lines = text.replace(/\n$/, "").split("\n");
-  if (lines[0] !== `# update ${sha}`) return null;
+  if (lines[0] !== `# update ${run.sha} ${run.at}`) return null;
   const last = (pattern) => lines.map((line) => pattern.exec(line)).filter(Boolean).pop() ?? null;
   const exit = last(/^# exit (\d+)$/);
+  const pid = last(/^# pid (\d+)$/);
   const fresh = last(/^# new mods: (.*)$/);
   const backup = lines.map((line) => / -> (.+?\.bak-[^/]+)\//.exec(line)).find(Boolean);
   return {
     done: Boolean(exit),
     ok: exit?.[1] === "0",
+    pid: pid ? Number(pid[1]) : null,
     newMods: fresh ? fresh[1].trim().split(/\s+/).filter(Boolean) : [],
     backup: backup ? backup[1] : null,
     tail: lines.filter((line) => !line.startsWith("# ")).slice(-TAIL_LINES).join("\n"),
@@ -187,7 +202,7 @@ export function windowOf(s, { home = "", now = Date.now() } = {}) {
     return { kind: "done", title: `Updated tkhwang-herdr-mods to ${short(r.sha)}`, lines, ...listOf(r.changes, r.from, r.sha) };
   }
   if (r) {
-    const lines = [r.unfinished ? `It ran past ${RUN_LIMIT / 60000} minutes, or Herdr closed while it ran. What it printed:` : "What it printed:"];
+    const lines = [r.unfinished ? "Its process ended without saying how (killed, or the machine restarted). What it printed:" : "What it printed:"];
     return { kind: "failed", title: r.unfinished ? "The update didn't finish" : "The update failed", lines, tail: r.tail || "(nothing)" };
   }
   const head = s?.head;
@@ -199,8 +214,11 @@ export function windowOf(s, { home = "", now = Date.now() } = {}) {
   }
   const lines = [s?.installed ? `Installed: ${installedText(s.installed)}, applied ${dayOf(s.installed.at)}.` : "No install recorded: ./sync.sh apply records one."];
   if (head) lines.push(`${BRANCH} is at ${short(head.sha)}, from ${dayOf(head.date)}.`);
+  if (comparisonOf(s)?.ahead === null) lines.push("GitHub doesn't have the installed commit (applied from one never pushed), so it can't tell which is newer.");
   if (s?.off) lines.push("Checking is off; Check now turns it back on.");
   else if (s?.checked) lines.push(`Checked ${ago(s.checked, now)}; GitHub is asked every ${EVERY / 3600000} hours.`);
   if (s?.error) lines.push(`The last check failed: ${s.error}.`);
-  return { kind: "status", title: head ? "tkhwang-herdr-mods is up to date" : "tkhwang-herdr-mods hasn't been checked yet", lines };
+  // Not an offer and not current: nothing tells whether the branch is ahead (see offerOf).
+  const title = !head ? "tkhwang-herdr-mods hasn't been checked yet" : current(s) ? "tkhwang-herdr-mods is up to date" : `tkhwang-herdr-mods can't be compared with ${BRANCH}`;
+  return { kind: "status", title, lines };
 }

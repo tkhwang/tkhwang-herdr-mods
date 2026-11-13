@@ -10,16 +10,17 @@
 //
 // What is installed is what `./sync.sh apply` recorded in the app folder (tkhwang-herdr-mods.json):
 // the commit it was built from and its tree. Every 3 hours the pill asks GitHub's public API for
-// the branch's newest commit, and, when that is new, for the commits since the installed one. ×
-// on an offer puts that version off (Later); the next commit brings the pill back. Update downloads
-// the commit from GitHub and runs that copy's ./sync.sh apply, which moves every file it replaces
-// to ~/.config/herdr-app.bak-<time>-<pid>/ first; Herdr reloads changed mods at once, and a new
-// mod folder at its next start. What changed opens the window (dialog.js) with the pull requests
-// and commits, Later, Stop checking and GitHub's compare page.
+// the branch's newest commit, and, when that is new, for the commits since the installed one; it
+// offers only what that comparison shows ahead. × on an offer or a failed update puts that version
+// off (Later); the next commit brings the pill back. Update downloads the commit from GitHub and
+// runs that copy's ./sync.sh apply, which moves every file it replaces to
+// ~/.config/herdr-app.bak-<time>-<pid>/ first; Herdr reloads changed mods at once, and a new mod
+// folder at its next start. What changed opens the window (dialog.js) with the pull requests and
+// commits, Later, Stop checking and GitHub's compare page.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { props, theme, placement, nextCommand } from "herdr";
-import { pillOf } from "./model.js";
+import { pillOf, offerOf } from "./model.js";
 import { state, save, look, check, startUpdate, settle, openWindow } from "./state.js";
 import { Dialog } from "./dialog.js";
 
@@ -110,8 +111,9 @@ class Pill {
       parts.push(close(() => save({ result: null })));
     } else if (pill.kind === "failed") {
       parts.push(link("tu-details", "Details", () => openWindow()));
-      parts.push(link("tu-retry", "Retry", later(startUpdate), true));
-      parts.push(close(() => save({ result: null })));
+      if (offerOf(s, { all: true })) parts.push(link("tu-retry", "Retry", later(startUpdate), true));
+      // Puts that commit off too, as on an offer, or the offer would take the pill's place at once.
+      parts.push(close(() => save({ result: null, dismissed: s.result.sha })));
     }
     // On a side edge (dragged there) the parts stack.
     return (vertical ? v_flex().py(4).items_start().gap(6) : h_flex().h(22).items_center().gap(12))

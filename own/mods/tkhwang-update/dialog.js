@@ -7,7 +7,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { props, theme, settings, closeOverlay, home } from "herdr";
-import { windowOf, short, WEB } from "./model.js";
+import { windowOf, offerOf, short, WEB } from "./model.js";
 import { state, save, check, startUpdate } from "./state.js";
 
 export class Dialog {
@@ -67,7 +67,7 @@ export class Dialog {
       footer.push(quiet("tu-copy", this.copied ? "Copied" : "Copy output", (_e, cx) => { cx.write_to_clipboard(w.tail); this.copied = true; cx.notify(); }));
       footer.push(div().flex_1());
       footer.push(button("tu-close", "Close", false, close));
-      if (s.head) footer.push(button("tu-retry", "Retry", true, then(startUpdate, true)));
+      if (offerOf(s, { all: true })) footer.push(button("tu-retry", "Retry", true, then(startUpdate, true)));
     } else if (w.kind === "status") {
       footer.push(div().flex_1());
       footer.push(button("tu-check", this.checking ? "Checking…" : "Check now", false, (_e, cx) => {
