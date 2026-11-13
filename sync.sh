@@ -503,7 +503,7 @@ came_in() { # d old new path
 license_note() { # d repo old new license
   local files
   [ -n "$5" ] && [ "$3" != "$4" ] || return 0
-  files="$(git -C "$1" diff --name-only "$3" "$4" -- 'LICENSE*' 'NOTICE*' 'COPYING*' 2>/dev/null | tr '\n' ' ' || true)"
+  files="$(git -C "$1" diff --name-only --no-renames "$3" "$4" -- 'LICENSE*' 'NOTICE*' 'COPYING*' 2>/dev/null | tr '\n' ' ' || true)"
   files="${files% }"
   [ -z "$files" ] || info "licenses/$5/: $2 changed $files since ${3:0:7} (git -C work/.cache/${1##*/} diff ${3:0:7} ${4:0:7} -- $files)"
 }
@@ -624,7 +624,7 @@ update_mod() { # mod [ref]
     git -C "$eg" show "$eold:$epath" 2>/dev/null | cmp -s - "$here/upstream/$m.extra/$f" ||
       left "$m" "$pin" "upstream/$m.extra/$f isn't $erepo@${eold:0:7}:$epath as shipped"
     enew="$(commit_of "$eg" HEAD)" || left "$m" "$pin" "could not read $erepo"
-    if [ "$enew" = "$eold" ] || git -C "$eg" diff --quiet "$eold" "$enew" -- "$epath"; then continue; fi
+    if [ "$enew" = "$eold" ] || git -C "$eg" diff --quiet --no-renames "$eold" "$enew" -- "$epath" 2>/dev/null; then continue; fi
     git -C "$eg" show "$enew:$epath" >"$w/extra/$f" 2>/dev/null ||
       left "$m" "$pin" "$erepo@${enew:0:7} has no $epath, which $f comes from (moved or removed upstream)"
     exj="$(jq -c --arg f "$f" --arg c "$enew" '. + {($f): $c}' <<<"$exj")"
@@ -636,7 +636,7 @@ update_mod() { # mod [ref]
       "to follow it, set its upstream path in sources.json to \"$moved\", then ./sync.sh update $m"
     left "$m" "$pin" "$repo@$(pin_name "$tag" "$new") has no $p (removed upstream?)"
   fi
-  if [ "$new" != "$old" ] && ! git -C "$g" diff --quiet "$old" "$new" -- "$p"; then changed=1; else new="$old" tag="$ref"; fi
+  if [ "$new" != "$old" ] && ! git -C "$g" diff --quiet --no-renames "$old" "$new" -- "$p" 2>/dev/null; then changed=1; else new="$old" tag="$ref"; fi
   if [ "$changed" = 0 ] && [ "$exj" = "{}" ]; then
     if [ "$alone" = 1 ]; then info "$m is already on $pin: nothing in $p changed upstream since"; fi
     exit 10
@@ -699,7 +699,7 @@ update_fetch() { # mod [ref]
   if git -C "$g" show-ref -q --verify "refs/tags/$to"; then tag="$to"; else tag=""; fi
   commit_of "$g" "$old" >/dev/null || left "$m" "$pin" "$repo no longer has ${old:0:7}"
   while IFS= read -r f; do files+=("$p/$f"); done < <(q --arg m "$m" '.mods[$m].upstream.files[]')
-  if [ "$new" = "$old" ] || git -C "$g" diff --quiet "$old" "$new" -- ${files[@]+"${files[@]}"}; then
+  if [ "$new" = "$old" ] || git -C "$g" diff --quiet --no-renames "$old" "$new" -- ${files[@]+"${files[@]}"} 2>/dev/null; then
     if [ "$alone" = 1 ]; then info "$m is already on $pin: none of its files changed upstream since"; fi
     exit 10
   fi
@@ -749,7 +749,7 @@ update_theme() { # file [ref]
   to="${given:-HEAD}"
   new="$(commit_of "$g" "$to")" || left "$name" "${old:0:7}" "$repo has no $to"
   commit_of "$g" "$old" >/dev/null || left "$name" "${old:0:7}" "$repo no longer has ${old:0:7}"
-  if [ "$new" = "$old" ] || git -C "$g" diff --quiet "$old" "$new" -- "$p"; then
+  if [ "$new" = "$old" ] || git -C "$g" diff --quiet --no-renames "$old" "$new" -- "$p" 2>/dev/null; then
     if [ "$alone" = 1 ]; then info "$name is already on ${old:0:7}: it hasn't changed upstream since"; fi
     exit 10
   fi
