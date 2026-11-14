@@ -79,6 +79,8 @@ export function setPick(tab, pick) {
 // branch; a chip for a picked folder none of them is in; and, in a space on this machine,
 // "Folder…" to pick any folder. The lit chip is what all three panels show, and a click on
 // another lights it in all of them. `id` keeps each panel's elements apart.
+// The bar's height, for a panel that budgets the room under it.
+export const FOLDER_BAR_H = 34;
 export function folderBar(t, id) {
   const { space, tab, terms } = shown();
   const now = panelFolder();
@@ -104,7 +106,7 @@ export function folderBar(t, id) {
       .child(div().max_w(150).truncate().child(nameOf(c.cwd, on)))
       .when(Boolean(c.branch), (el) => el.child(div().max_w(120).truncate().text_size(11).text_color(t.dim).child(c.branch)));
   };
-  const bar = h_flex().id(id).h(34).flex_none().px(8).gap(4).items_center().border_b(1).border_color(t.border)
+  const bar = h_flex().id(id).h(FOLDER_BAR_H).flex_none().px(8).gap(4).items_center().border_b(1).border_color(t.border)
     .overflow_x_scrollbar().children(chips.map(chip));
   if (on) return bar;
   const at = tab.id;

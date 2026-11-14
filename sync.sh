@@ -5,8 +5,13 @@
 #   ./sync.sh apply                   build, then install it and config/ into ~/.config/herdr-app
 #   ./sync.sh backup                  ~/.config/herdr-app -> patches/, own/, config/
 #   ./sync.sh status                  each mod: where it's from, my patch's size, whether the app has it
-#   ./sync.sh update MOD REF          move MOD's upstream to REF (tag, branch or full commit), keeping my patch
-#   ./sync.sh update MOD --continue   finish an update after fixing its conflicts in work/MOD
+#   ./sync.sh update [--dry-run]      every upstream to its newest version, keeping my patches; one my
+#                                     patch doesn't go onto is left as it is, and it says why; a dry
+#                                     run only fetches the upstream repositories into work/.cache
+#   ./sync.sh update NAME [REF]       one mod or themes/FILE, to REF (tag, branch or full commit) or its
+#                                     newest; a merge that needs a hand waits in work/NAME
+#   ./sync.sh update NAME --continue  finish it after fixing what waits in work/NAME
+#   ./sync.sh update NAME --abort     drop it
 #
 # sources.json says where each mod comes from. upstream/ holds that code as it was at the pinned
 # commit and is never edited by hand; patches/ holds what I changed in it; own/ holds what I wrote.
@@ -40,7 +45,7 @@ info() { mark '1;34' '[*]' "$*"; }
 ok() { mark '1;32' '[+]' "$*"; }
 bad() { mark '1;31' '[-]' "$*"; }
 die() { bad "$*" >&2; exit 1; }
-for tool in jq git rsync curl shasum; do command -v "$tool" >/dev/null 2>&1 || die "needs $tool"; done
+for tool in jq git rsync curl shasum perl; do command -v "$tool" >/dev/null 2>&1 || die "needs $tool"; done
 
 TMP="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/herdr-mods.XXXXXX")" && pwd -P)"
 stage=""
@@ -62,14 +67,20 @@ all_shared() { q '[.mods[].shared // [] | .[]] | unique | .[]'; }
 users_of() { q --arg f "$1" '.mods | to_entries[] | select((.value.shared // []) | index($f)) | .key'; }
 origin_of() { q --arg m "$1" '.mods[$m].upstream | "\(.repo)@\(.ref // .commit[0:7])"'; }
 
+# Rewrites sources.json through jq, keeping its layout: a list of plain values stays on one line.
+edit_sources() { # jq arguments...
+  jq "$@" "$src" | perl -0777 -pe 's{\[\n\s*((?:"[^"\\\n]*"|-?[0-9.]+)(?:,\n\s*(?:"[^"\\\n]*"|-?[0-9.]+))*)\n\s*\]}{my $x = $1; $x =~ s/,\n\s*/, /g; "[$x]"}ge' >"$src.new"
+  mv "$src.new" "$src"
+}
+
 # ── building ──────────────────────────────────────────────────────────────────
 
 # Other people's code for a mod: its upstream, then single files taken from elsewhere.
-pristine() { # mod dest [upstream dir]
-  local up="${3:-$here/upstream/$1}"
+pristine() { # mod dest [upstream dir] [extras dir]
+  local up="${3:-$here/upstream/$1}" ex="${4:-$here/upstream/$1.extra}"
   rm -rf "${2:?}"; mkdir -p "$2"
   rsync -a "$up/" "$2/"
-  if [ -d "$here/upstream/$1.extra" ]; then rsync -a "$here/upstream/$1.extra/" "$2/"; fi
+  if [ -d "$ex" ]; then rsync -a "$ex/" "$2/"; fi
 }
 
 apply_patch() { # patch dest
@@ -108,16 +119,29 @@ same_tree() { diff -rq "${EXCLUDE[@]/--exclude/-x}" "$1" "$2" >/dev/null 2>&1; }
 
 # ── patches ───────────────────────────────────────────────────────────────────
 
+# A patch from the tree `base` to the tree `final`, written to `out`; removed when they're the same.
+diff_trees() { # base final out
+  local t="$TMP/diff" rc=0
+  rm -rf "$t"; mkdir -p "$t"
+  rsync -a "$1/" "$t/a/"
+  rsync -a "$2/" "$t/b/"
+  (cd "$t" && git -c core.quotepath=false diff --no-index --no-color --no-ext-diff --no-renames --binary --no-prefix a b) >"$t/p" || rc=$?
+  [ "$rc" -le 1 ] || die "could not diff $2"
+  if [ -s "$t/p" ]; then cp "$t/p" "$3"; else rm -f "$3"; fi
+}
+
 # patches/<mod>.patch: from the mod's upstream to `final` (which has no shared files).
 # Removed when the mod is its upstream as is.
 make_patch() { # mod final
-  local m="$1" t="$TMP/patch-$1" out="$here/patches/$1.patch" rc=0
-  rm -rf "$t"; mkdir -p "$t"
-  pristine "$m" "$t/a"
-  rsync -a "$2/" "$t/b/"
-  (cd "$t" && git -c core.quotepath=false diff --no-index --no-color --no-ext-diff --no-renames --binary --no-prefix a b) >"$t/p" || rc=$?
-  [ "$rc" -le 1 ] || die "could not diff $m"
-  if [ -s "$t/p" ]; then cp "$t/p" "$out"; else rm -f "$out"; fi
+  pristine "$1" "$TMP/pristine-$1"
+  diff_trees "$TMP/pristine-$1" "$2" "$here/patches/$1.patch"
+}
+
+# A patch's size as lines added and removed, or "none".
+patch_size() { # file
+  if [ -f "$1" ]; then
+    awk '/^(\+\+\+|---) /{next} /^\+/{a++} /^-/{d++} END{printf "+%d -%d", a, d}' "$1"
+  else echo none; fi
 }
 
 # ── backup ────────────────────────────────────────────────────────────────────
@@ -282,12 +306,7 @@ status() {
     k="$(kind_of "$m")"
     case "$k" in
       own) from="own/mods/$m"; patch="-" ;;
-      *)
-        from="$(origin_of "$m")"
-        if [ -f "$here/patches/$m.patch" ]; then
-          patch="$(awk '/^(\+\+\+|---) /{next} /^\+/{a++} /^-/{d++} END{printf "+%d -%d", a, d}' "$here/patches/$m.patch")"
-        else patch="none"; fi
-        ;;
+      *) from="$(origin_of "$m")"; patch="$(patch_size "$here/patches/$m.patch")" ;;
     esac
     if [ ! -d "$live/mods/$m" ]; then app="missing"
     elif same_tree "$TMP/mods/$m" "$live/mods/$m"; then app="same"
@@ -306,6 +325,105 @@ status() {
     info "last apply: $(jq -r '(if .commit then .commit[0:7] else "no commit" end)
       + (if .branch then " on \(.branch)" else "" end) + (if .dirty then ", with local changes" else "" end)
       + ", \(.applied_at // "at an unknown time")"' "$live/$RECORD")"
+  fi
+}
+
+# ── upstream repositories ─────────────────────────────────────────────────────
+
+# Each upstream repository is kept in work/.cache as a blobless clone: its whole history, with a
+# file's contents downloaded only when something reads them. Each is fetched once a run.
+cache="$work/.cache"
+fetched=" "
+repo_dir() { echo "$cache/$(echo "$1" | tr / _).git"; }
+
+open_repo() { # repo
+  local d head
+  d="$(repo_dir "$1")"
+  case "$fetched" in *" $1 "*) return 0 ;; esac
+  if [ -d "$d" ]; then
+    git -C "$d" fetch -q --prune --tags --force origin 2>/dev/null || return 1
+  else
+    mkdir -p "$cache"
+    git clone -q --bare --filter=blob:none "https://github.com/$1.git" "$d" 2>/dev/null || { rm -rf "$d"; return 1; }
+    git -C "$d" config remote.origin.fetch '+refs/heads/*:refs/heads/*'
+  fi
+  # HEAD follows the default branch, which upstream can rename.
+  head="$(git -C "$d" ls-remote --symref origin HEAD 2>/dev/null | awk '$1 == "ref:" {print $2; exit}' || true)"
+  if [ -n "$head" ]; then git -C "$d" symbolic-ref HEAD "$head"; fi
+  fetched="$fetched$1 "
+}
+
+# The commit `ref` names in repository `d`: a tag, a branch, HEAD or a commit.
+commit_of() { # d ref
+  git -C "$1" rev-parse -q --verify "$2^{commit}" 2>/dev/null ||
+    { git -C "$1" fetch -q origin "$2" 2>/dev/null && git -C "$1" rev-parse -q --verify 'FETCH_HEAD^{commit}'; }
+}
+
+# The version of Herdr installed here, which the clones of its mods follow ("" when it isn't).
+app_version() {
+  if command -v herdr-app >/dev/null 2>&1; then herdr-app --version 2>/dev/null | awk '{print $NF; exit}' || true; fi
+}
+
+# What a pin moves to when no REF is given: a Herdr clone to the version of Herdr installed here
+# (else Herdr's newest release), a pin on a tag to the newest release tag, any other pin to the head
+# of the default branch.
+newest() { # d kind ref
+  local t=""
+  if [ "$2" = herdr ] && [ -n "$herdr_version" ] && git -C "$1" show-ref -q --verify "refs/tags/v$herdr_version"; then
+    echo "v$herdr_version"; return 0
+  fi
+  if [ "$2" = herdr ] || [ -n "$3" ]; then
+    t="$(git -C "$1" tag -l --sort=-v:refname | grep -E '^v?[0-9]+(\.[0-9]+)*$' | head -n 1 || true)"
+  fi
+  echo "${t:-HEAD}"
+}
+
+# The files of `path` at `commit` in repository `d`, into `dest`.
+extract() { # d commit path dest
+  local depth
+  depth="$(echo "$3" | tr '/' '\n' | grep -c .)"
+  rm -rf "${4:?}"; mkdir -p "$4"
+  git -C "$1" archive "$2" "$3" 2>/dev/null | tar -x -C "$4" --strip-components="$depth" && [ -n "$(ls -A "$4")" ]
+}
+
+# Where upstream moved the folder `path` between two commits: the mod folder (the one with a
+# mod.json) most of its files went to.
+moved_to() { # d old new path
+  local to
+  to="$(git -C "$1" diff -M --name-status "$2" "$3" 2>/dev/null |
+    awk -F '\t' -v p="$4/" '$1 ~ /^R/ && index($2, p) == 1 {
+      rest = substr($2, length(p) + 1); cut = length($3) - length(rest)
+      if (cut > 1 && substr($3, cut + 1) == rest) print substr($3, 1, cut - 1) }' |
+    sort | uniq -c | sort -rn | awk 'NR == 1 {print $2}' || true)"
+  # Files can also move deeper in the mod (into an icons/ folder, say).
+  while [ -n "$to" ] && ! git -C "$1" cat-file -e "$3:$to/mod.json" 2>/dev/null; do
+    case "$to" in */*) to="${to%/*}" ;; *) to="" ;; esac
+  done
+  echo "$to"
+}
+
+# A mod's upstream as it runs under its name here. Herdr's mod.clone (clone_mod_at in Herdr's
+# src/mods.rs) points a clone's own asset paths and overlay names at the clone's name and records
+# cloned_from in its mod.json; my patch carries those changes. Made on both sides of an update, it
+# lets the merge see only what I changed, and renames new upstream code too. A mod kept under
+# another name than its upstream folder's gets the same renames.
+as_named() { # mod dir from version
+  local f json
+  if [ "$3" != "$1" ]; then
+    { grep -rlIF -e "$3" "$2" || true; } | while IFS= read -r f; do
+      FROM="$3" TO="$1" perl -0777 -pi -e '
+        my ($f, $t) = @ENV{qw(FROM TO)};
+        my @swap = (["mods/$f/", "mods/$t/"], ["\"mods/$f\"", "\"mods/$t\""], ["\x27mods/$f\x27", "\x27mods/$t\x27"]);
+        for my $k ("mod", "\"mod\"", "\x27mod\x27") { for my $s ("", " ") { for my $q ("\"", "\x27") {
+          push @swap, ["$k:$s$q$f$q", "$k:$s$q$t$q"];
+        } } }
+        for my $r (@swap) { my ($x, $y) = @$r; s/\Q$x\E/$y/g }' "$f"
+    done
+  fi
+  if [ "$(kind_of "$1")" = herdr ]; then
+    if [ -f "$2/mod.json" ]; then json="$(jq --arg n "$3" --arg v "$4" '. + {cloned_from: {name: $n, version: $v}}' "$2/mod.json")"
+    else json="$(jq -n --arg n "$3" --arg v "$4" '{cloned_from: {name: $n, version: $v}}')"; fi
+    printf '%s' "$json" >"$2/mod.json"
   fi
 }
 
@@ -339,59 +457,418 @@ merge_trees() { # base ours theirs out
   done < <( (cd "$base" && find . -type f; cd "$ours" && find . -type f; cd "$theirs" && find . -type f) | sed 's|^\./||' | sort -u)
 }
 
-update() {
-  local m="${1:-}" ref="${2:-}" repo path depth commit conflicts tag
-  [ -n "$m" ] && [ -n "$ref" ] || die "usage: ./sync.sh update MOD REF | update MOD --continue"
-  case "$(kind_of "$m")" in herdr | oss) ;; *) die "$m isn't built on an upstream" ;; esac
-  if [ "$ref" = --continue ]; then finish_update "$m"; return; fi
-  [ ! -e "$work/$m" ] || die "work/$m exists: finish it with './sync.sh update $m --continue', or delete work/$m*"
-  repo="$(q --arg m "$m" '.mods[$m].upstream.repo')"
-  path="$(q --arg m "$m" '.mods[$m].upstream.path')"
-  depth="$(echo "$path" | tr '/' '\n' | grep -c .)"
-  # A tag, branch or full commit comes in one shallow fetch; anything else needs the history.
-  git init -q "$TMP/repo"
-  git -C "$TMP/repo" remote add origin "https://github.com/$repo.git"
-  if git -C "$TMP/repo" fetch -q --depth 1 origin "$ref" 2>/dev/null; then
-    commit="$(git -C "$TMP/repo" rev-parse 'FETCH_HEAD^{commit}')"
-  else
-    git -C "$TMP/repo" fetch -q --tags origin || die "could not fetch $repo"
-    commit="$(git -C "$TMP/repo" rev-parse --verify -q "$ref^{commit}" || git -C "$TMP/repo" rev-parse --verify -q "origin/$ref^{commit}")" || die "$repo has no $ref"
-  fi
-  if [ "$commit" = "$(q --arg m "$m" '.mods[$m].upstream.commit')" ]; then info "$m is already on $repo@${commit:0:7}"; return; fi
-  mkdir -p "$work/$m.upstream"
-  if ! git -C "$TMP/repo" archive "$commit" "$path" 2>/dev/null | tar -x -C "$work/$m.upstream" --strip-components="$depth" ||
-    [ -z "$(ls -A "$work/$m.upstream")" ]; then
-    rm -rf "${work:?}/${m:?}.upstream"; rmdir "$work" 2>/dev/null || true
-    die "$repo@${commit:0:7} has no $path (moved or removed upstream: change its path in sources.json first)"
-  fi
-  # Only a tag names a version; a branch moves on, so the commit alone is kept for it.
-  if git -C "$TMP/repo" ls-remote --exit-code --tags origin "refs/tags/$ref" >/dev/null 2>&1; then tag="$ref"; else tag=""; fi
-  printf '%s\t%s\n' "$commit" "$tag" >"$work/$m.ref"
-  pristine "$m" "$TMP/old"
-  pristine "$m" "$TMP/new" "$work/$m.upstream"
-  build_mod "$m" "$TMP/mine" noshared
-  conflicts="$(merge_trees "$TMP/old" "$TMP/mine" "$TMP/new" "$work/$m")"
-  if [ -z "$conflicts" ]; then finish_update "$m"; return; fi
-  bad "$m: my patch doesn't go onto $repo@${commit:0:7} by itself. Fix these in work/$m/:"
-  printf '%s\n' "$conflicts" | sed 's/^/    /'
-  info "then run ./sync.sh update $m --continue"
+dry=0          # --dry-run: say what would happen, write nothing
+alone=0        # one NAME given: a merge that needs a hand waits in work/NAME
+herdr_version=""
+rc=0
+# jq: moves .mods[$m].upstream to commit $c and tag $t (none when ""), its keys in the same order.
+repin='.mods[$m].upstream |= ({repo} + (if $t == "" then {} else {ref: $t} end) + {commit: $c} + del(.repo, .ref, .commit))'
+
+# Runs a command in a subshell with errexit in force and leaves its status in rc, for a caller that
+# goes on either way: errexit is off inside anything an if, || or && tests.
+attempt() { set +e; ( set -e; "$@" ); rc=$?; set -e; }
+
+pin_name() { if [ -n "$1" ]; then echo "$1"; else echo "${2:0:7}"; fi; } # ref commit
+stays() { if [ "$dry" = 1 ]; then echo "would stay on"; else echo "left on"; fi; }
+
+# Ends an update that changed nothing: says why, then each hint on a line of its own.
+left() { # name pin why [hint...]
+  local h
+  bad "$1: $(stays) $2: $3"
+  shift 3
+  for h in "$@"; do echo "      $h"; done
+  exit 1
 }
 
-finish_update() { # mod
-  local m="$1" commit tag left
-  [ -d "$work/$m" ] && [ -d "$work/$m.upstream" ] && [ -f "$work/$m.ref" ] || die "no update of $m in progress"
-  left="$(grep -rlE '^(<<<<<<<|>>>>>>>) ' "$work/$m" || true)"
-  [ -z "$left" ] || die "conflict markers are still in: $(echo $left | sed "s|$work/||g")"
-  IFS=$'\t' read -r commit tag <"$work/$m.ref" || true
-  rm -rf "${here:?}/upstream/${m:?}"
-  mv "$work/$m.upstream" "$here/upstream/$m"
-  make_patch "$m" "$work/$m"
-  jq --arg m "$m" --arg c "$commit" --arg t "$tag" \
-    '.mods[$m].upstream.commit = $c | if $t == "" then del(.mods[$m].upstream.ref) else .mods[$m].upstream.ref = $t end' \
-    "$src" >"$TMP/sources.json"
-  mv "$TMP/sources.json" "$src"
-  rm -rf "${work:?}/${m:?}" "${work:?}/${m:?}.ref"
-  ok "$m is on $(origin_of "$m") with my patch on top. ./sync.sh apply installs it; check it in the app."
+# How far `new` is from `old` in `path`: "3 commits in path", or "3 commits back in path".
+span() { # d old new path
+  local n
+  if [ "$2" != "$3" ] && git -C "$1" merge-base --is-ancestor "$3" "$2" 2>/dev/null; then
+    n="$(git -C "$1" rev-list --count "$3..$2" -- "$4")"
+    echo "$n commit$([ "$n" = 1 ] || echo s) back in $4"
+  else
+    n="$(git -C "$1" rev-list --count "$2..$3" -- "$4")"
+    echo "$n commit$([ "$n" = 1 ] || echo s) in $4"
+  fi
+}
+
+# The upstream commits that changed `path` from `old` to `new`, a few at most.
+came_in() { # d old new path
+  local n
+  n="$(git -C "$1" rev-list --count "$2..$3" -- "$4" 2>/dev/null || echo 0)"
+  git -C "$1" log --format='%h %<(72,trunc)%s' "$2..$3" -- "$4" 2>/dev/null | head -n 5 | sed -e 's/ *$//' -e 's/^/      /' || true
+  if [ "$n" -gt 5 ]; then echo "      and $((n - 5)) more"; fi
+}
+
+# Says when a source's license files changed between two commits: licenses/ keeps them as shipped.
+license_note() { # d repo old new license
+  local files
+  [ -n "$5" ] && [ "$3" != "$4" ] || return 0
+  files="$(git -C "$1" diff --name-only --no-renames "$3" "$4" -- 'LICENSE*' 'NOTICE*' 'COPYING*' 2>/dev/null | tr '\n' ' ' || true)"
+  files="${files% }"
+  [ -z "$files" ] || info "licenses/$5/: $2 changed $files since ${3:0:7} (git -C work/.cache/${1##*/} diff ${3:0:7} ${4:0:7} -- $files)"
+}
+
+# Says which README lines name an old pin (any of `tokens`): in the section about `name`, or beside
+# its name for a commit (a version such as 0.1.11 can be another mod's there).
+readme_note() { # name token...
+  local name="$1" lines
+  shift
+  lines="$(awk -v name="$name" -v toks="$*" '
+    BEGIN { n = split(toks, tok, " ") }
+    /<summary>/ { mine = index($0, ">" name "<") > 0 }
+    { for (i = 1; i <= n; i++)
+        if (index($0, tok[i]) && (mine || (index($0, name) && tok[i] ~ /^[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]$/))) {
+          out = out (out == "" ? "" : ", ") NR; break } }
+    /<\/details>/ { mine = 0 }
+    END { print out }' "$here/README.md")"
+  [ -z "$lines" ] || info "README.md still names the old version on lines $lines"
+}
+
+# What an update merged from: my patch and the mod's entry in sources.json, as one hash.
+baseline_of() { # mod
+  { if [ -f "$here/patches/$1.patch" ]; then cat "$here/patches/$1.patch"; else echo "no patch"; fi
+    q -c --arg m "$1" '.mods[$m]'; } | shasum -a 256 | cut -d' ' -f1
+}
+
+# A merge that needs a hand waits in work/: the merged files (with any conflict markers) in
+# work/NAME, the new upstream and extras beside them, and what to pin once it's done, with the
+# baseline it was merged from.
+wait_in_work() { # mod w commit tag extras-json
+  local m="$1"
+  mkdir -p "$work"
+  rm -rf "${work:?}/${m:?}" "$work/$m.upstream" "$work/$m.extra"
+  mv "$2/out" "$work/$m"
+  mv "$2/up" "$work/$m.upstream"
+  if [ -d "$2/extra" ]; then mv "$2/extra" "$work/$m.extra"; fi
+  jq -n --arg c "$3" --arg t "$4" --argjson ex "$5" --arg b "$(baseline_of "$m")" \
+    '{commit: $c, ref: $t, extras: $ex, baseline: $b}' >"$work/$m.json"
+}
+
+# Takes a merged mod when it holds up: my patch against the new upstream builds exactly the merged
+# files, and herdr-app check passes the mod with its shared files. Then its new upstream, extras,
+# patch and pins are written together.
+take_mod() { # mod upstream extras merged commit tag extras-json
+  local m="$1" up="$2" ex="$3" out="$4" new="$5" tag="$6" exj="$7" w="$TMP/take-$1"
+  local f repo old ref p lic g size extras_before erepo eold epath elic tokens=""
+  repo="$(q --arg m "$m" '.mods[$m].upstream.repo')"
+  old="$(q --arg m "$m" '.mods[$m].upstream.commit')"
+  ref="$(q --arg m "$m" '.mods[$m].upstream.ref // ""')"
+  p="$(q --arg m "$m" '.mods[$m].upstream.path')"
+  lic="$(q --arg m "$m" '.mods[$m].license // ""')"
+  g="$(repo_dir "$repo")"
+  rm -rf "$w"; mkdir -p "$w"
+  pristine "$m" "$w/raw" "$up" "$ex"
+  diff_trees "$w/raw" "$out" "$w/patch"
+  pristine "$m" "$w/mod" "$up" "$ex"
+  if [ -f "$w/patch" ]; then apply_patch "$w/patch" "$w/mod" || die "$m: its new patch doesn't apply to the new upstream"; fi
+  same_tree "$w/mod" "$out" || die "$m: its new patch doesn't build what was merged"
+  while IFS= read -r f; do cp "$here/own/shared/$f" "$w/mod/$f"; done < <(shared_of "$m")
+  if command -v herdr-app >/dev/null 2>&1; then
+    info "checking mods/$m"
+    if ! herdr-app check "$w/mod" >"$w/check.log" 2>&1; then
+      bad "$m: $(stays) $(pin_name "$ref" "$old"): herdr-app check rejects it with my patch on top:"
+      sed "s|$w/mod|mods/$m|g" "$w/check.log" | grep -v '^[[:space:]]*$' | tail -n 20 | sed 's/^/      /'
+      return 1
+    fi
+  fi
+  size="$(patch_size "$here/patches/$m.patch") -> $(patch_size "$w/patch")"
+  if [ "$size" = "none -> none" ]; then size="no patch of mine"; else size="my patch $size"; fi
+  if [ "$dry" = 1 ]; then ok "$m: would move to $repo@$(pin_name "$tag" "$new"), $size"; return 0; fi
+  extras_before="$(q --arg m "$m" --argjson ex "$exj" '.mods[$m].extras // [] | .[] | select($ex[.file]) | [.file, .repo, .commit, .path, (.license // "")] | @tsv')"
+  # Written all together: a Ctrl-C waits until it's done.
+  trap '' INT TERM HUP
+  rsync -a --delete "$up/" "$here/upstream/$m/"
+  for f in $(jq -r 'keys[]' <<<"$exj"); do cp "$ex/$f" "$here/upstream/$m.extra/$f"; done
+  if [ -f "$w/patch" ]; then cp "$w/patch" "$here/patches/$m.patch"; else rm -f "$here/patches/$m.patch"; fi
+  edit_sources --arg m "$m" --arg c "$new" --arg t "$tag" --argjson ex "$exj" \
+    "$repin"' | if .mods[$m].extras then .mods[$m].extras |= map(.commit = ($ex[.file] // .commit)) else . end'
+  trap - INT TERM HUP
+  ok "$m: on $repo@$(pin_name "$tag" "$new") now, $size"
+  if [ "$new" != "$old" ]; then
+    came_in "$g" "$old" "$new" "$p"
+    license_note "$g" "$repo" "$old" "$new" "$lic"
+    tokens="${old:0:7} $ref ${ref#v}"
+  fi
+  while IFS=$'\t' read -r f erepo eold epath elic; do
+    [ -n "$f" ] || continue
+    license_note "$(repo_dir "$erepo")" "$erepo" "$eold" "$(jq -r --arg f "$f" '.[$f]' <<<"$exj")" "$elic"
+    tokens="$tokens ${eold:0:7}"
+  done <<<"$extras_before"
+  # shellcheck disable=SC2086 # one word a token
+  readme_note "$m" $tokens
+}
+
+# One mod built on an upstream: a three-way merge of its old upstream, its old upstream with my
+# patch, and its new upstream, both upstreams as they run under its name here (as_named).
+update_mod() { # mod [ref]
+  local m="$1" given="${2:-}" repo old p ref from g to new tag w pin f erepo eold epath eg enew
+  local exj="{}" changed=0 moved oldver="" newver="" conflicts
+  repo="$(q --arg m "$m" '.mods[$m].upstream.repo')"
+  old="$(q --arg m "$m" '.mods[$m].upstream.commit')"
+  p="$(q --arg m "$m" '.mods[$m].upstream.path')"
+  ref="$(q --arg m "$m" '.mods[$m].upstream.ref // ""')"
+  from="${p##*/}" pin="$(pin_name "$ref" "$old")"
+  [ ! -e "$work/$m" ] || left "$m" "$pin" "an update waits in work/$m" "./sync.sh update $m --continue finishes it, --abort drops it"
+  open_repo "$repo" || left "$m" "$pin" "could not fetch $repo"
+  g="$(repo_dir "$repo")"
+  to="${given:-$(newest "$g" "$(kind_of "$m")" "$ref")}"
+  new="$(commit_of "$g" "$to")" || left "$m" "$pin" "$repo has no $to"
+  if git -C "$g" show-ref -q --verify "refs/tags/$to"; then tag="$to"; else tag=""; fi
+  commit_of "$g" "$old" >/dev/null || left "$m" "$pin" "$repo no longer has ${old:0:7}"
+  w="$TMP/update-$m"
+  rm -rf "$w"; mkdir -p "$w"
+  # The merge starts from upstream/, so it has to be what upstream ships: what differs would be lost.
+  if git -C "$g" cat-file -e "$old:$p" 2>/dev/null; then
+    extract "$g" "$old" "$p" "$w/pinned" || left "$m" "$pin" "could not read $p at ${old:0:7}"
+    same_tree "$w/pinned" "$here/upstream/$m" ||
+      left "$m" "$pin" "upstream/$m isn't $repo@${old:0:7} as shipped" "put back what $repo ships there, and keep my change in patches/$m.patch"
+  fi
+  # Its extras follow the head of their default branches.
+  if [ -d "$here/upstream/$m.extra" ]; then mkdir -p "$w/extra"; rsync -a "$here/upstream/$m.extra/" "$w/extra/"; fi
+  while IFS=$'\t' read -r f erepo eold epath; do
+    open_repo "$erepo" || left "$m" "$pin" "could not fetch $erepo, which $f comes from"
+    eg="$(repo_dir "$erepo")"
+    commit_of "$eg" "$eold" >/dev/null || left "$m" "$pin" "$erepo no longer has ${eold:0:7}, which $f is pinned at"
+    git -C "$eg" show "$eold:$epath" 2>/dev/null | cmp -s - "$here/upstream/$m.extra/$f" ||
+      left "$m" "$pin" "upstream/$m.extra/$f isn't $erepo@${eold:0:7}:$epath as shipped"
+    enew="$(commit_of "$eg" HEAD)" || left "$m" "$pin" "could not read $erepo"
+    if [ "$enew" = "$eold" ] || git -C "$eg" diff --quiet --no-renames "$eold" "$enew" -- "$epath" 2>/dev/null; then continue; fi
+    git -C "$eg" show "$enew:$epath" >"$w/extra/$f" 2>/dev/null ||
+      left "$m" "$pin" "$erepo@${enew:0:7} has no $epath, which $f comes from (moved or removed upstream)"
+    exj="$(jq -c --arg f "$f" --arg c "$enew" '. + {($f): $c}' <<<"$exj")"
+    info "$m: $f from $erepo ${eold:0:7} -> ${enew:0:7}"
+  done < <(q --arg m "$m" '.mods[$m].extras // [] | .[] | [.file, .repo, .commit, .path] | @tsv')
+  if ! git -C "$g" cat-file -e "$new:$p" 2>/dev/null; then
+    moved="$(moved_to "$g" "$old" "$new" "$p")"
+    [ -z "$moved" ] || left "$m" "$pin" "$repo moved $p to $moved at $(pin_name "$tag" "$new")" \
+      "to follow it, set its upstream path in sources.json to \"$moved\", then ./sync.sh update $m"
+    left "$m" "$pin" "$repo@$(pin_name "$tag" "$new") has no $p (removed upstream?)"
+  fi
+  if [ "$new" != "$old" ] && ! git -C "$g" diff --quiet --no-renames "$old" "$new" -- "$p" 2>/dev/null; then changed=1; else new="$old" tag="$ref"; fi
+  if [ "$changed" = 0 ] && [ "$exj" = "{}" ]; then
+    if [ "$alone" = 1 ]; then info "$m is already on $pin: nothing in $p changed upstream since"; fi
+    exit 10
+  fi
+  if [ "$changed" = 1 ] && [ -z "$given" ] && ! git -C "$g" merge-base --is-ancestor "$old" "$new" 2>/dev/null; then
+    left "$m" "$pin" "$to (${new:0:7}) isn't ahead of it" "./sync.sh update $m REF takes another version"
+  fi
+  if [ "$changed" = 1 ]; then
+    info "$m: $repo $pin -> $(pin_name "$tag" "$new"), $(span "$g" "$old" "$new" "$p")"
+    extract "$g" "$new" "$p" "$w/up" || left "$m" "$pin" "could not read $p at ${new:0:7}"
+  else
+    mkdir -p "$w/up"; rsync -a "$here/upstream/$m/" "$w/up/"
+  fi
+  build_mod "$m" "$w/mine" noshared
+  if [ "$(kind_of "$m")" = herdr ]; then
+    oldver="$(jq -r '.cloned_from.version // empty' "$w/mine/mod.json" 2>/dev/null || true)"
+    newver="$(git -C "$g" show "$new:Cargo.toml" 2>/dev/null | awk -F '"' '/^version *=/ {print $2; exit}' || true)"
+    oldver="${oldver:-${ref#v}}" newver="${newver:-${tag#v}}"
+  fi
+  pristine "$m" "$w/old"; as_named "$m" "$w/old" "$from" "$oldver"
+  pristine "$m" "$w/new" "$w/up" "$w/extra"; as_named "$m" "$w/new" "$from" "$newver"
+  conflicts="$(merge_trees "$w/old" "$w/mine" "$w/new" "$w/out")"
+  if [ -n "$conflicts" ]; then
+    if [ "$alone" = 1 ] && [ "$dry" = 0 ]; then
+      wait_in_work "$m" "$w" "$new" "$tag" "$exj"
+      bad "$m: my patch doesn't go onto $repo@$(pin_name "$tag" "$new") by itself. Fix these in work/$m/:"
+      printf '%s\n' "$conflicts" | sed 's/^/      /'
+      info "then ./sync.sh update $m --continue, or --abort to drop it"
+      exit 1
+    fi
+    bad "$m: $(stays) $pin: my patch doesn't go onto $(pin_name "$tag" "$new") by itself, in:"
+    printf '%s\n' "$conflicts" | sed 's/^/      /'
+    if [ "$dry" = 0 ]; then echo "      ./sync.sh update $m${given:+ $given} leaves them in work/$m to merge by hand"; fi
+    exit 1
+  fi
+  attempt take_mod "$m" "$w/up" "$w/extra" "$w/out" "$new" "$tag" "$exj"
+  if [ "$rc" != 0 ] && [ "$dry" = 0 ]; then
+    if [ "$alone" = 1 ]; then
+      wait_in_work "$m" "$w" "$new" "$tag" "$exj"
+      info "fix it in work/$m/, then ./sync.sh update $m --continue, or --abort to drop it"
+    else
+      echo "      ./sync.sh update $m${given:+ $given} leaves it in work/$m to fix by hand"
+    fi
+  fi
+  exit "$rc"
+}
+
+# A mod apply downloads: only its pin moves, once its files are there and herdr-app check passes them.
+update_fetch() { # mod [ref]
+  local m="$1" given="${2:-}" repo old p ref g to new tag pin f added w="$TMP/update-$1" files=()
+  repo="$(q --arg m "$m" '.mods[$m].upstream.repo')"
+  old="$(q --arg m "$m" '.mods[$m].upstream.commit')"
+  p="$(q --arg m "$m" '.mods[$m].upstream.path')"
+  ref="$(q --arg m "$m" '.mods[$m].upstream.ref // ""')"
+  pin="$(pin_name "$ref" "$old")"
+  open_repo "$repo" || left "$m" "$pin" "could not fetch $repo"
+  g="$(repo_dir "$repo")"
+  to="${given:-$(newest "$g" fetch "$ref")}"
+  new="$(commit_of "$g" "$to")" || left "$m" "$pin" "$repo has no $to"
+  if git -C "$g" show-ref -q --verify "refs/tags/$to"; then tag="$to"; else tag=""; fi
+  commit_of "$g" "$old" >/dev/null || left "$m" "$pin" "$repo no longer has ${old:0:7}"
+  while IFS= read -r f; do files+=("$p/$f"); done < <(q --arg m "$m" '.mods[$m].upstream.files[]')
+  if [ "$new" = "$old" ] || git -C "$g" diff --quiet --no-renames "$old" "$new" -- ${files[@]+"${files[@]}"} 2>/dev/null; then
+    if [ "$alone" = 1 ]; then info "$m is already on $pin: none of its files changed upstream since"; fi
+    exit 10
+  fi
+  if [ -z "$given" ] && ! git -C "$g" merge-base --is-ancestor "$old" "$new" 2>/dev/null; then
+    left "$m" "$pin" "$to (${new:0:7}) isn't ahead of it" "./sync.sh update $m REF takes another version"
+  fi
+  info "$m: $repo $pin -> $(pin_name "$tag" "$new"), $(span "$g" "$old" "$new" "$p")"
+  rm -rf "$w"; mkdir -p "$w/mod"
+  while IFS= read -r f; do
+    mkdir -p "$(dirname "$w/mod/$f")"
+    git -C "$g" show "$new:$p/$f" >"$w/mod/$f" 2>/dev/null || left "$m" "$pin" "$repo@$(pin_name "$tag" "$new") has no $p/$f"
+  done < <(q --arg m "$m" '.mods[$m].upstream.files[]')
+  if command -v herdr-app >/dev/null 2>&1; then
+    info "checking mods/$m"
+    if ! herdr-app check "$w/mod" >"$w/check.log" 2>&1; then
+      bad "$m: $(stays) $pin: herdr-app check rejects $repo@$(pin_name "$tag" "$new"):"
+      sed "s|$w/mod|mods/$m|g" "$w/check.log" | grep -v '^[[:space:]]*$' | tail -n 20 | sed 's/^/      /'
+      exit 1
+    fi
+  fi
+  # Files upstream added beside them, but not the ones the app writes into every mod folder.
+  added="$(comm -13 <(git -C "$g" ls-tree -r --name-only "$old" -- "$p/" | sort) <(git -C "$g" ls-tree -r --name-only "$new" -- "$p/" | sort) |
+    grep -vE '(\.d\.ts|/jsconfig\.json|/\.DS_Store)$' | tr '\n' ' ' || true)"
+  if [ "$dry" = 1 ]; then
+    ok "$m: would move to $repo@$(pin_name "$tag" "$new")"
+  else
+    edit_sources --arg m "$m" --arg c "$new" --arg t "$tag" "$repin"
+    ok "$m: on $repo@$(pin_name "$tag" "$new") now"
+    came_in "$g" "$old" "$new" "$p"
+    # shellcheck disable=SC2086 # no ref, no token
+    readme_note "$m" "${old:0:7}" $ref
+  fi
+  if [ -n "$added" ]; then info "$repo added ${added% }: put in $m's files in sources.json what it needs"; fi
+  exit 0
+}
+
+# A theme apply downloads: its commit and sha256 move, once the new file is JSON.
+update_theme() { # file [ref]
+  local file="$1" given="${2:-}" name="themes/$1" i repo old p g to new sum w="$TMP/theme-$1"
+  i="$(q --arg f "$file" '[.themes[].path | split("/") | last] | index($f) // empty')"
+  [ -n "$i" ] || die "sources.json has no theme $file"
+  repo="$(q --argjson i "$i" '.themes[$i].repo')"
+  old="$(q --argjson i "$i" '.themes[$i].commit')"
+  p="$(q --argjson i "$i" '.themes[$i].path')"
+  open_repo "$repo" || left "$name" "${old:0:7}" "could not fetch $repo"
+  g="$(repo_dir "$repo")"
+  to="${given:-HEAD}"
+  new="$(commit_of "$g" "$to")" || left "$name" "${old:0:7}" "$repo has no $to"
+  commit_of "$g" "$old" >/dev/null || left "$name" "${old:0:7}" "$repo no longer has ${old:0:7}"
+  if [ "$new" = "$old" ] || git -C "$g" diff --quiet --no-renames "$old" "$new" -- "$p" 2>/dev/null; then
+    if [ "$alone" = 1 ]; then info "$name is already on ${old:0:7}: it hasn't changed upstream since"; fi
+    exit 10
+  fi
+  if [ -z "$given" ] && ! git -C "$g" merge-base --is-ancestor "$old" "$new" 2>/dev/null; then
+    left "$name" "${old:0:7}" "$to (${new:0:7}) isn't ahead of it" "./sync.sh update $name REF takes another version"
+  fi
+  info "$name: $repo ${old:0:7} -> ${new:0:7}, $(span "$g" "$old" "$new" "$p")"
+  git -C "$g" show "$new:$p" >"$w" 2>/dev/null || left "$name" "${old:0:7}" "$repo@${new:0:7} has no $p"
+  jq empty "$w" 2>/dev/null || left "$name" "${old:0:7}" "$p isn't JSON at ${new:0:7}"
+  sum="$(shasum -a 256 "$w" | cut -d' ' -f1)"
+  if [ "$dry" = 1 ]; then ok "$name: would move to $repo@${new:0:7}"; exit 0; fi
+  edit_sources --argjson i "$i" --arg c "$new" --arg s "$sum" '.themes[$i].commit = $c | .themes[$i].sha256 = $s'
+  ok "$name: on $repo@${new:0:7} now"
+  came_in "$g" "$old" "$new" "$p"
+  readme_note "$file" "${old:0:7}"
+  exit 0
+}
+
+# Ends with status 0 when it moved, 10 when it was already up to date, anything else when it stayed.
+update_target() { # name [ref]
+  case "$1" in
+    themes/*) update_theme "${1#themes/}" "${2:-}" ;;
+    *)
+      case "$(kind_of "$1")" in
+        herdr | oss) update_mod "$1" "${2:-}" ;;
+        fetch) update_fetch "$1" "${2:-}" ;;
+        own) die "$1 is mine: it has no upstream" ;;
+        *) die "sources.json has no mod or theme named $1" ;;
+      esac
+      ;;
+  esac
+}
+
+# Every upstream in sources.json, each on its own: one that can't move is left as it is.
+update_all() {
+  local r t repos taken="" stayed="" current=""
+  repos="$(q '[.mods[] | .upstream.repo // empty, (.extras // [] | .[].repo)] + [.themes[].repo] | unique | .[]')"
+  info "fetching $(echo "$repos" | grep -c .) upstream repositories into work/.cache"
+  # Each target fetches its own again if this fails, and says so.
+  for r in $repos; do open_repo "$r" || true; done
+  for t in $(q '.mods | to_entries[] | select(.value.kind == "herdr" or .value.kind == "oss" or .value.kind == "fetch") | .key') \
+    $(q '.themes[] | "themes/" + (.path | split("/") | last)'); do
+    attempt update_target "$t"
+    case "$rc" in
+      0) taken="$taken $t" ;;
+      10) current="$current $t" ;;
+      *) stayed="$stayed $t" ;;
+    esac
+  done
+  if [ "$dry" = 1 ]; then
+    if [ -n "$taken" ]; then ok "would update:$taken"; fi
+    if [ -n "$stayed" ]; then bad "would stay as they are:$stayed"; fi
+  else
+    if [ -n "$taken" ]; then ok "updated:$taken"; fi
+    if [ -n "$stayed" ]; then bad "left as they are:$stayed"; fi
+  fi
+  if [ -n "$current" ]; then info "already up to date:$current"; fi
+  if [ -n "$taken" ] && [ "$dry" = 0 ]; then info "next: ./sync.sh apply, check the app, then commit upstream/, patches/ and sources.json"; fi
+  [ -z "$stayed" ]
+}
+
+# --continue: takes an update that waited in work/NAME, once what needed a hand is fixed.
+finish_update() { # name
+  local m="$1" st="$work/$1.json" marks
+  [ -d "$work/$m" ] && [ -f "$st" ] || die "no update of $m waits in work/$m"
+  marks="$(grep -rlE '^(<<<<<<<|>>>>>>>) ' "$work/$m" || true)"
+  # shellcheck disable=SC2086 # one line
+  [ -z "$marks" ] || die "conflict markers are still in: $(echo $marks | sed "s|$work/||g")"
+  # A backup or a checkout meanwhile changed my patch or the pin the merge started from: taking the
+  # merge would write over that change, so it stays waiting.
+  [ "$(jq -r '.baseline // ""' "$st")" = "$(baseline_of "$m")" ] ||
+    die "patches/$m.patch or sources.json changed since work/$m was merged; ./sync.sh update $m --abort, then update it again"
+  attempt take_mod "$m" "$work/$m.upstream" "$work/$m.extra" "$work/$m" "$(jq -r .commit "$st")" "$(jq -r .ref "$st")" "$(jq -c .extras "$st")"
+  [ "$rc" = 0 ] || die "$m still waits in work/$m: fix it there, then ./sync.sh update $m --continue"
+  rm -rf "${work:?}/${m:?}" "$work/$m.upstream" "$work/$m.extra" "$st"
+}
+
+# --abort: drops an update that waits in work/NAME; upstream/, patches/ and sources.json never changed.
+abort_update() { # name
+  local m="$1"
+  [ -e "$work/$m" ] || [ -e "$work/$m.json" ] || [ -e "$work/$m.ref" ] || die "no update of $m waits in work/$m"
+  rm -rf "${work:?}/${m:?}" "$work/$m.upstream" "$work/$m.extra" "$work/$m.json" "$work/$m.ref"
+  ok "dropped the update of $m: upstream/$m, its patch and sources.json are as they were"
+}
+
+update() {
+  local a args=()
+  for a in "$@"; do
+    case "$a" in --dry-run) dry=1 ;; *) args+=("$a") ;; esac
+  done
+  set -- ${args[@]+"${args[@]}"}
+  [ $# -le 2 ] || die "usage: ./sync.sh update [--dry-run] [NAME [REF | --continue | --abort]]"
+  case "${2:-}" in
+    --continue | --abort)
+      [ "$dry" = 0 ] || die "--dry-run doesn't go with $2"
+      if [ "$2" = --abort ]; then abort_update "$1"; return; fi
+      attempt finish_update "$1"
+      return "$rc"
+      ;;
+  esac
+  herdr_version="$(app_version)"
+  if [ $# -eq 0 ]; then
+    if [ "$dry" = 1 ]; then info "a dry run: upstream/, patches/ and sources.json stay as they are; only work/.cache is fetched"; fi
+    if [ -n "$herdr_version" ]; then info "Herdr $herdr_version is installed, so its clones follow v$herdr_version"; fi
+    update_all
+  else
+    alone=1
+    attempt update_target "$@"
+    [ "$rc" = 0 ] || [ "$rc" = 10 ]
+  fi
 }
 
 case "${1:-}" in
@@ -400,5 +877,5 @@ case "${1:-}" in
   backup) backup ;;
   status) status ;;
   update) shift; update "$@" ;;
-  *) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

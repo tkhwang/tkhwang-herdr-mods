@@ -1,5 +1,5 @@
 diff --git a/main.js b/main.js
-index 6c6f7d9..a76507a 100644
+index 544b857..3885bc6 100644
 --- a/main.js
 +++ b/main.js
 @@ -6,6 +6,9 @@
@@ -12,9 +12,9 @@ index 6c6f7d9..a76507a 100644
  
  function find(node, id) {
    if (node?.id === id) return node;
-@@ -68,6 +71,44 @@ export default class Spaces extends View {
-     // `git status` walks the whole tree, on another machine a process there:
-     // only when its answer could have changed (see `due`).
+@@ -71,6 +74,44 @@ export default class Spaces extends View {
+     cx.timer.every(15000, cx => this.refreshMachines(cx));
+     // Refresh only when the refs could have changed (see `due`).
      cx.timer.every(250, (cx) => this.checkNew(cx));
 +    // dev ports: read now, whenever its folder changes, and every 5 s (entries expire; the folder may appear later).
 +    this.ports = {};
@@ -57,7 +57,7 @@ index 6c6f7d9..a76507a 100644
    }
  
    checkNew(cx) {
-@@ -289,11 +330,12 @@ export default class Spaces extends View {
+@@ -390,11 +431,12 @@ export default class Spaces extends View {
      const colors = shared("space.colors") ?? {};
      const color = colors[w.id] ?? "ansi6";
      const fill = color.startsWith("#") ? color : (MARK[color] ?? t[color]);
@@ -71,7 +71,7 @@ index 6c6f7d9..a76507a 100644
        .flex_none()
        .justify_center()
        .rounded(8)
-@@ -335,7 +377,8 @@ export default class Spaces extends View {
+@@ -438,7 +480,8 @@ export default class Spaces extends View {
            .when(!tree, el => el.child(h_flex().size(18).flex_none().rounded(5).bg(fill).items_center().justify_center().text_size(10.5).font_bold().text_color("#ffffff").child([...w.name][0]?.toUpperCase() ?? "?")))
            .child(div().flex_shrink(0).max_w(150).truncate().text_color(t.foreground).child(w.name))
            .child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1()),
@@ -82,7 +82,7 @@ index 6c6f7d9..a76507a 100644
  
    compact({ w, i }, t) {
 diff --git a/mod.json b/mod.json
-index 9c9914c..7416755 100644
+index 9c9914c..f53536f 100644
 --- a/mod.json
 +++ b/mod.json
 @@ -1 +1,8 @@
@@ -92,7 +92,7 @@ index 9c9914c..7416755 100644
 +  "title": "Spaces",
 +  "cloned_from": {
 +    "name": "spaces",
-+    "version": "0.1.11"
++    "version": "0.1.15"
 +  }
 +}
 \ No newline at end of file

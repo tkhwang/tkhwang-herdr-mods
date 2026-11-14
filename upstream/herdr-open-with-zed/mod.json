@@ -1,5 +1,6 @@
 {
   "place": "none",
+  "title": "Open with Zed",
   "cloned_from": {
     "name": "new-menu",
     "version": "0.1.11"

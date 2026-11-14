@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { theme, spaces, panes, knownAgents, run, openOverlay, closeOverlay, props, window, keys, exec } from "herdr";
+import { theme, spaces, panes, knownAgents, run, openOverlay, closeOverlay, props, window, keys, exec, notify } from "herdr";
 
 function shortcut(name) {
   const k = keys().find(b => b.section === "global" && b.action === name);
@@ -19,13 +19,15 @@ function shortcut(name) {
   }).join(" ");
 }
 
-// The `zed` CLI is optional on macOS (Zed > Install CLI) and is `zeditor` on some Linux distros.
+// The `zed` CLI is optional on macOS (Zed > Install CLI), is `zeditor` on some Linux distros,
+// and the Flatpak only exposes `dev.zed.Zed`.
 async function openInZed(folder) {
-  const tries = [["zed", [folder]], ["zeditor", [folder]]];
+  const tries = [["zed", [folder]], ["zeditor", [folder]], ["flatpak", ["run", "dev.zed.Zed", folder]]];
   if (window()?.platform === "macos") tries.push(["open", ["-a", "Zed", folder]]);
   for (const [command, args] of tries) {
     try { if ((await exec(command, args)).code === 0) return; } catch {}
   }
+  notify({ title: "Could not open Zed", body: "No zed, zeditor or Flatpak Zed found on PATH.", level: "error" });
 }
 
 export default class NewMenu extends View {
@@ -70,7 +72,7 @@ export default class NewMenu extends View {
         .when(this.agents.length === 0, el => el.child(div().px(9).py(6).text_color(t.dim).child(this.failed ? "Could not load agents" : "Checking installed agents…"))))
       .child(div().h(1).mx(4).my(5).bg(t.border))
       .child(this.row("space", div().w(14).child("+"), "New space", () => run("space.new"), shortcut("space.new")))
-      .child(this.row("worktree", svg("mods/workspace-chrome/branch.svg").size(14), "New worktree…", () => openOverlay({ mod: "worktree", kind: "dialog", width: 460, height: 280, props: { space: space?.id, folder: panes().find(p => p.focused)?.cwd, action: "new" } }), "", Boolean(space)))
-      .child(this.row("worktree-open", svg("mods/workspace-chrome/branch.svg").size(14), "Open worktree\u2026", () => openOverlay({ mod: "worktree", kind: "dialog", width: 560, height: 480, props: { space: space?.id, folder: panes().find(p => p.focused)?.cwd, action: "open" } }), "", Boolean(space)));
+      .child(this.row("worktree", svg("mods/workspace-chrome/branch.svg").size(14), "New worktree…", () => openOverlay({ mod: "worktree", kind: "dialog", width: 460, height: 280, props: { space: space?.id, folder: cwd, action: "new" } }), "", Boolean(space)))
+      .child(this.row("worktree-open", svg("mods/workspace-chrome/branch.svg").size(14), "Open worktree\u2026", () => openOverlay({ mod: "worktree", kind: "dialog", width: 560, height: 480, props: { space: space?.id, folder: cwd, action: "open" } }), "", Boolean(space)));
   }
 }

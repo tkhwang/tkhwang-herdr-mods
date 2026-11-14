@@ -4,8 +4,8 @@
       "kind": "herdr",
       "upstream": {
         "repo": "herdrdev/herdr-app",
-        "ref": "v0.1.11",
-        "commit": "e12fd31866f33cb613922d0b33ea506e6f23ce3c",
+        "ref": "v0.1.15",
+        "commit": "9950887361af3ba218b9ce7a347cb8ec7b66c71d",
         "path": "defaults/mods/spaces"
       },
       "license": "herdr",
@@ -112,8 +112,8 @@
       "kind": "oss",
       "upstream": {
         "repo": "rabeeh-ta/herdr-git-graph",
-        "ref": "v0.3.1",
-        "commit": "4a9cd1ef79915234a56ba0031945b0b82973585c",
+        "ref": "v0.3.3",
+        "commit": "099ddb96bfde853b2b6bf23b4e18aed23e4f2934",
         "path": "mods/git-graph"
       },
       "license": "herdr-git-graph",
@@ -132,7 +132,7 @@
       "kind": "oss",
       "upstream": {
         "repo": "atleugim/herdr-open-with-zed",
-        "commit": "a15570eabe03597282252b055efc35cf9c5ce838",
+        "commit": "b1ccbc14cfbf5e83106140d9686d674ff75bbbbe",
         "path": "mods/herdr-open-with-zed"
       },
       "license": "herdr-open-with-zed"
