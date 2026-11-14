@@ -6,7 +6,8 @@
 #   ./sync.sh backup                  ~/.config/herdr-app -> patches/, own/, config/
 #   ./sync.sh status                  each mod: where it's from, my patch's size, whether the app has it
 #   ./sync.sh update [--dry-run]      every upstream to its newest version, keeping my patches; one my
-#                                     patch doesn't go onto is left as it is, and it says why
+#                                     patch doesn't go onto is left as it is, and it says why; a dry
+#                                     run only fetches the upstream repositories into work/.cache
 #   ./sync.sh update NAME [REF]       one mod or themes/FILE, to REF (tag, branch or full commit) or its
 #                                     newest; a merge that needs a hand waits in work/NAME
 #   ./sync.sh update NAME --continue  finish it after fixing what waits in work/NAME
@@ -524,8 +525,15 @@ readme_note() { # name token...
   [ -z "$lines" ] || info "README.md still names the old version on lines $lines"
 }
 
+# What an update merged from: my patch and the mod's entry in sources.json, as one hash.
+baseline_of() { # mod
+  { if [ -f "$here/patches/$1.patch" ]; then cat "$here/patches/$1.patch"; else echo "no patch"; fi
+    q -c --arg m "$1" '.mods[$m]'; } | shasum -a 256 | cut -d' ' -f1
+}
+
 # A merge that needs a hand waits in work/: the merged files (with any conflict markers) in
-# work/NAME, the new upstream and extras beside them, and what to pin once it's done.
+# work/NAME, the new upstream and extras beside them, and what to pin once it's done, with the
+# baseline it was merged from.
 wait_in_work() { # mod w commit tag extras-json
   local m="$1"
   mkdir -p "$work"
@@ -533,7 +541,8 @@ wait_in_work() { # mod w commit tag extras-json
   mv "$2/out" "$work/$m"
   mv "$2/up" "$work/$m.upstream"
   if [ -d "$2/extra" ]; then mv "$2/extra" "$work/$m.extra"; fi
-  jq -n --arg c "$3" --arg t "$4" --argjson ex "$5" '{commit: $c, ref: $t, extras: $ex}' >"$work/$m.json"
+  jq -n --arg c "$3" --arg t "$4" --argjson ex "$5" --arg b "$(baseline_of "$m")" \
+    '{commit: $c, ref: $t, extras: $ex, baseline: $b}' >"$work/$m.json"
 }
 
 # Takes a merged mod when it holds up: my patch against the new upstream builds exactly the merged
@@ -818,6 +827,10 @@ finish_update() { # name
   marks="$(grep -rlE '^(<<<<<<<|>>>>>>>) ' "$work/$m" || true)"
   # shellcheck disable=SC2086 # one line
   [ -z "$marks" ] || die "conflict markers are still in: $(echo $marks | sed "s|$work/||g")"
+  # A backup or a checkout meanwhile changed my patch or the pin the merge started from: taking the
+  # merge would write over that change, so it stays waiting.
+  [ "$(jq -r '.baseline // ""' "$st")" = "$(baseline_of "$m")" ] ||
+    die "patches/$m.patch or sources.json changed since work/$m was merged; ./sync.sh update $m --abort, then update it again"
   attempt take_mod "$m" "$work/$m.upstream" "$work/$m.extra" "$work/$m" "$(jq -r .commit "$st")" "$(jq -r .ref "$st")" "$(jq -c .extras "$st")"
   [ "$rc" = 0 ] || die "$m still waits in work/$m: fix it there, then ./sync.sh update $m --continue"
   rm -rf "${work:?}/${m:?}" "$work/$m.upstream" "$work/$m.extra" "$st"
@@ -848,7 +861,7 @@ update() {
   esac
   herdr_version="$(app_version)"
   if [ $# -eq 0 ]; then
-    if [ "$dry" = 1 ]; then info "a dry run: nothing is written"; fi
+    if [ "$dry" = 1 ]; then info "a dry run: upstream/, patches/ and sources.json stay as they are; only work/.cache is fetched"; fi
     if [ -n "$herdr_version" ]; then info "Herdr $herdr_version is installed, so its clones follow v$herdr_version"; fi
     update_all
   else

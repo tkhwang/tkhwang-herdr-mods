@@ -73,7 +73,7 @@ The themes have no license either: `apply` downloads them at the pinned commit a
 ./sync.sh apply                    # build, then install into ~/.config/herdr-app
 ./sync.sh build                    # only put the mods together, into build/mods
 ./sync.sh update                   # every upstream to its newest version, keeping my patches; one my patch doesn't go onto is left as it is, and it says why
-./sync.sh update --dry-run         # the same, writing nothing
+./sync.sh update --dry-run         # the same, writing nothing but the fetches into work/.cache
 ./sync.sh update <name> [<ref>]    # one mod or themes/<file>, to <ref> (a tag, a branch or a full commit) or its newest; a merge that needs a hand waits in work/<name>/
 ./sync.sh update <name> --continue # finish it after fixing what waits in work/<name>/
 ./sync.sh update <name> --abort    # drop it
@@ -94,7 +94,7 @@ A mod stays as it is, and the update says why, when:
 
 It ends with what moved, what stayed and what was already up to date, and exits with 1 when something stayed. Under each mod that moved it lists the upstream commits that came in, the README lines that still name the old version, and a `LICENSE` or `NOTICE` the source changed (`licenses/` keeps them as shipped at the pinned commit). Then `./sync.sh apply`, check the app, and commit `upstream/`, `patches/` and `sources.json`, a mod to a commit. The update starts from `patches/`, so back up first (`./sync.sh backup`) when the app has changes of its own.
 
-To take one that stayed by hand, `./sync.sh update agents-dev` (or with a ref: `./sync.sh update git-graph v0.4.0`) merges the same way but leaves what needs a hand in `work/agents-dev/`, with conflict markers: fix it there, then `./sync.sh update agents-dev --continue` checks it again and takes it, or `--abort` drops it. Nothing in `upstream/`, `patches/` or `sources.json` changes before that. Upstream repositories are kept in `work/.cache/` as blobless clones (their history, a file's contents downloaded only when read), fetched once a run.
+To take one that stayed by hand, `./sync.sh update agents-dev` (or with a ref: `./sync.sh update git-graph v0.4.0`) merges the same way but leaves what needs a hand in `work/agents-dev/`, with conflict markers: fix it there, then `./sync.sh update agents-dev --continue` checks it again and takes it, or `--abort` drops it; `--continue` refuses when the patch or the mod's entry in `sources.json` changed since the merge (a `backup` meanwhile), since taking it would write over that change. Nothing in `upstream/`, `patches/` or `sources.json` changes before that. Upstream repositories are kept in `work/.cache/` as blobless clones (their history, a file's contents downloaded only when read), fetched once a run.
 
 **What apply does.** It copies, never links: the app rewrites the layout file as the window is used. Each changed mod is staged beside the app folder, so the app never loads a partial mod, and checked with `herdr-app check` before any goes in; if one fails, nothing is installed. Every file it replaces is moved to `~/.config/herdr-app.bak-<time>-<pid>/` first. Last, it records what it installed in `~/.config/herdr-app/tkhwang-herdr-mods.json`: the commit, that commit's tree, the branch and whether the checkout had uncommitted changes, which `tkhwang-update` compares with GitHub; a run that stops part way keeps the record of the install before it. Mods that `sources.json` doesn't name are left alone by every command. `sync.sh` needs `jq`, `git`, `rsync`, `curl`, `shasum` and `perl`, all on macOS.
 
