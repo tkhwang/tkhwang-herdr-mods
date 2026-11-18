@@ -1,7 +1,16 @@
 diff --git a/main.js b/main.js
-index 4ec2d54..097cf73 100644
+index 4ec2d54..435d9ba 100644
 --- a/main.js
 +++ b/main.js
+@@ -3,7 +3,7 @@
+ 
+ import { View, div, image, svg } from "gpui-kit";
+ import { v_flex, h_flex } from "gpui-base";
+-import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
++import { agents, terminals, panes, focused, spaces, machines, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
+ 
+ function find(node, id) {
+   if (node?.id === id) return node;
 @@ -14,6 +14,25 @@ function find(node, id) {
    return null;
  }
@@ -38,7 +47,7 @@ index 4ec2d54..097cf73 100644
  const SECTION = { 4: "Needs you", 3: "Done", 2: "Working", 1: "Idle" };
  const SECTION_STATUS = { 4: "blocked", 3: "done", 2: "working" };
  
-@@ -68,6 +88,47 @@ function icon(p, size, color) {
+@@ -68,6 +88,67 @@ function icon(p, size, color) {
    return p.tint ? svg(p.icon).size(size).flex_none().text_color(color) : image(p.icon).w(size).h(size).flex_none();
  }
  
@@ -72,10 +81,18 @@ index 4ec2d54..097cf73 100644
 +  if (color) return tint(color, current ? "40" : "24");
 +  return tint(t.foreground, "2e");
 +}
++// current agent: its row in a pale tint of the accent blue its bar has (needs you keeps its deeper
++// orange, the most urgent mark), apart from the current space's neutral block around it.
++function agentTint(state, t) {
++  if (state === "blocked") return tint(GLOW.blocked, "40");
++  return tint(t.accent ?? t.working, "38");
++}
 +// current highlight: the current row also has a bar on its left edge in the text color, so where
 +// you are reads at a glance whatever its background (neutral, or blue while its agent works);
 +// blue stays working's.
-+const currentBar = (t) => div().absolute().left(0).top(6).bottom(6).w(3).rounded(2).bg(t.foreground);
++// current agent: in the theme's accent blue (working's blue in a theme without one), so it reads
++// apart from the current space's bar in the text color: | white, the space; | blue, the agent.
++const currentBar = (t, left = 0) => div().absolute().left(left).top(6).bottom(6).w(3).rounded(2).bg(t.accent ?? t.working);
 +
 +// nested rows: under a space header an agent's row steps in by the header's avatar and
 +// gap (16 + 6), as the Spaces list nests a worktree under its repo (pl 22), so the space
@@ -83,10 +100,68 @@ index 4ec2d54..097cf73 100644
 +// which name their space themselves, stay at the edge; a row's sub-terminals step in too.
 +const NEST = 22;
 +
++// current agent: the saved record of each space's agent last focused. One that can't be read,
++// or isn't a map of space to agent, starts empty rather than keep the list from loading.
++function readLast() {
++  try {
++    const saved = JSON.parse(localStorage.getItem("last") ?? "{}");
++    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
++    return Object.fromEntries(Object.entries(saved).filter(([, addr]) => typeof addr === "string"));
++  } catch (_e) {
++    return {};
++  }
++}
++
  export default class Agents extends View {
    init(_props, cx) {
      if (props()?.sortMenu) return;
-@@ -170,25 +231,25 @@ export default class Agents extends View {
+@@ -75,6 +156,7 @@ export default class Agents extends View {
+     // Each agent's last state and when it changed (ms), kept across restarts.
+     this.changed = JSON.parse(localStorage.getItem("changed") ?? "{}");
+     this.pins = JSON.parse(localStorage.getItem("pins") ?? "[]");
++    this.last = readLast(); // current agent: each space's agent last focused, kept across reloads
+     cx.timer.every(30000, (cx) => cx.notify());
+   }
+ 
+@@ -110,6 +192,37 @@ export default class Agents extends View {
+     if (kept.length !== this.pins.length) this.setPins(kept);
+   }
+ 
++  // current agent: the focused agent (in a pane, or in a layout's terminal block, which Herdr
++  // reports by its terminal alone); when the focus is on no agent (Files, Changes, the file tab, a
++  // shell), the current space's agent last focused, else the one in its shown tab, else its first.
++  // So the Agents list says which agent you are with, as the Spaces list says which space.
++  current(list) {
++    let dirty = false;
++    // Spaces that closed drop out, whatever has the focus; only once every machine's layout is
++    // read, so a machine still connecting doesn't lose its spaces' records.
++    if (machines().every((m) => m.layout !== "loading")) {
++      const open = new Set(spaces().map((s) => s.id));
++      for (const id of Object.keys(this.last)) {
++        if (open.has(id)) continue;
++        delete this.last[id];
++        dirty = true;
++      }
++    }
++    const here = focused();
++    const on = list.find((a) => a.focused) ?? (here?.terminal && !here.pane ? list.find((a) => a.address === here.terminal) : null);
++    if (on && this.last[on.space] !== on.address) {
++      this.last[on.space] = on.address;
++      dirty = true;
++    }
++    if (dirty) localStorage.setItem("last", JSON.stringify(this.last));
++    if (on) return on.address;
++    const space = spaces().find((s) => s.active);
++    if (!space) return null;
++    const mine = list.filter((a) => a.space === space.id);
++    const tab = space.tabs.find((tb) => tb.active);
++    return (mine.find((a) => a.address === this.last[space.id]) ?? mine.find((a) => a.tab === tab?.id) ?? mine[0])?.address ?? null;
++  }
++
+   since(a) {
+     return this.changed[a.address]?.at ?? 0;
+   }
+@@ -170,25 +283,25 @@ export default class Agents extends View {
      });
    }
  
@@ -117,7 +192,7 @@ index 4ec2d54..097cf73 100644
          .when(Boolean(l), el => el.border_l(1.5).border_color(t.input))
          .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(6))))
        .when(Boolean(pic), el => el.child(div().mr(8).child(pic)))
-@@ -196,15 +257,23 @@ export default class Agents extends View {
+@@ -196,15 +309,23 @@ export default class Agents extends View {
        .child(this.status(t, { status: st }, compact));
    }
  
@@ -147,7 +222,7 @@ index 4ec2d54..097cf73 100644
    }
  
    render(cx) {
-@@ -215,7 +284,8 @@ export default class Agents extends View {
+@@ -215,10 +336,14 @@ export default class Agents extends View {
      let list = agents();
      this.listed = new Map(list.map((a) => [a.address, a.status]));
      const all = terminals();
@@ -157,7 +232,13 @@ index 4ec2d54..097cf73 100644
      const now = Date.now();
      this.track(list, now);
      this.hold(list);
-@@ -233,7 +303,8 @@ export default class Agents extends View {
++    const cur = this.current(list); // current agent
++    const isCur = (a) => a.address === cur; // current agent
++    const curSpace = spaces().find((s) => s.active)?.id; // current space
+     const byPriority = sort.id === "priority";
+     const urgency = new Map(list.map((a) => [a.address, Math.max(this.rank(a), ...this.tree(all, a.address).map((s) => RANK[kidStatus(s.t, this.listed)] ?? 0))]));
+     const rankOf = (a) => urgency.get(a.address);
+@@ -233,7 +358,8 @@ export default class Agents extends View {
        const subs = collapsed ? [] : this.tree(all, a.address);
        const r = row(a, i, subs);
        if (this.folded.has(a.address)) return [r];
@@ -167,7 +248,7 @@ index 4ec2d54..097cf73 100644
      };
  
      // The fold chevron; folded, the count too, colored by the most urgent one.
-@@ -249,7 +320,7 @@ export default class Agents extends View {
+@@ -249,7 +375,7 @@ export default class Agents extends View {
          .flex()
          .items_center()
          .rounded(4)
@@ -176,7 +257,7 @@ index 4ec2d54..097cf73 100644
          .text_color(open ? t.dim : (t[top] ?? t.dim))
          .cursor_pointer()
          .hover((s) => s.bg(t.hover).text_color(t.foreground))
-@@ -277,6 +348,31 @@ export default class Agents extends View {
+@@ -277,6 +403,31 @@ export default class Agents extends View {
        if (detail.get(a.address) == null && seen[`${a.space_name}\u0000`] > 1) detail.set(a.address, label(a));
      }
  
@@ -208,7 +289,7 @@ index 4ec2d54..097cf73 100644
      const row = (a, i, subs = []) => {
        const pic = icon(a.program, 16, t.foreground);
        const more = detail.get(a.address);
-@@ -285,11 +381,15 @@ export default class Agents extends View {
+@@ -285,18 +436,22 @@ export default class Agents extends View {
        if (collapsed) {
          return h_flex()
            .id(`ag-${a.address}`)
@@ -220,12 +301,20 @@ index 4ec2d54..097cf73 100644
            .flex_none()
            .items_center()
            .gap(4)
-+          .when(a.focused || a.status === "working" || a.status === "blocked", (el) => el.bg(rowTint(a.focused, a.status, t))) // current highlight, status mark
-+          .when(a.focused, (el) => el.child(currentBar(t))) // current highlight
++          .when(isCur(a) || a.status === "working" || a.status === "blocked", (el) => el.bg(isCur(a) ? agentTint(a.status, t) : rowTint(false, a.status, t))) // current highlight, status mark
++          .when(isCur(a), (el) => el.child(currentBar(t))) // current highlight
            .hover((s) => s.bg(t.hover))
            .on_click(() => run("pane.focus", { pane: a.pane }))
            .child(div().flex_1().min_w(0).whitespace_nowrap().text_right().text_color(t.muted).child(String(i + 1)))
-@@ -318,16 +418,20 @@ export default class Agents extends View {
+           .child(h_flex().w(14).flex_none().items_center().justify_center().child(this.status(t, a, true)));
+       }
+       const when = this.since(a);
+-      const idle = a.status === "idle" && !a.focused;
++      const idle = a.status === "idle" && !isCur(a); // current agent
+       const isPinned = this.pins.includes(a.address);
+       const pin = div()
+         .id(`pin-${a.address}`)
+@@ -318,16 +473,20 @@ export default class Agents extends View {
        // Under a space header the space goes without saying; an automatic tab number says nothing.
        // Without a space header above (priority, pinned) the row names its space.
        const full = byPriority || isPinned;
@@ -245,18 +334,18 @@ index 4ec2d54..097cf73 100644
          .items_center()
          .gap(9)
 -        .when(a.focused, (el) => el.bg(t.selected))
-+        .when(a.focused || a.status === "working" || a.status === "blocked", (el) => el.bg(rowTint(a.focused, a.status, t))) // current highlight, status mark
-+        .when(a.focused, (el) => el.child(currentBar(t))) // current highlight
++        .when(isCur(a) || a.status === "working" || a.status === "blocked", (el) => el.bg(isCur(a) ? agentTint(a.status, t) : rowTint(false, a.status, t))) // current highlight, status mark
++        .when(isCur(a), (el) => el.child(currentBar(t, full ? 0 : NEST))) // current highlight: nested under its space's bar
          .cursor_pointer()
          .hover((s) => s.bg(t.hover))
          .on_hover((on, cx) => {
-@@ -343,12 +447,14 @@ export default class Agents extends View {
+@@ -343,12 +502,14 @@ export default class Agents extends View {
              cx.notify();
            })).child(pic)))
          .child(h_flex().flex_1().min_w(0).gap(5).items_center()
 -          .child(div().min_w(0).max_w(full && more ? 120 : 200).truncate().text_color(idle ? t.muted : t.foreground).child(name))
 +          .child(div().min_w(0).max_w(full && more ? 120 : 200).truncate().text_color(idle ? t.muted : t.foreground)
-+            .when(a.focused, (el) => el.font_semibold()).child(name)) // current highlight
++            .when(isCur(a), (el) => el.font_semibold()).child(name)) // current highlight
            .when(full && Boolean(more), el => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`\u00b7 ${more}`))))
 -        .when(Boolean(machine), el => el.child(div().text_size(10).text_color(t.dim).child(machine)))
 +        .when(Boolean(repo), el => el.child(div().flex_none().text_size(fs(10.5)).text_color(t.dim).tooltip(`In ${repo}/`).child(repo))) // wrapper repos
@@ -268,7 +357,7 @@ index 4ec2d54..097cf73 100644
          .child(this.status(t, a, byPriority && !isPinned));
      };
  
-@@ -369,12 +475,12 @@ export default class Agents extends View {
+@@ -369,12 +530,12 @@ export default class Agents extends View {
        return h_flex()
          .id(g.id)
          .px(8)
@@ -284,7 +373,7 @@ index 4ec2d54..097cf73 100644
          .font_medium()
          .cursor_pointer()
          .hover((s) => s.text_color(t.foreground))
-@@ -389,9 +495,59 @@ export default class Agents extends View {
+@@ -389,9 +550,72 @@ export default class Agents extends View {
            .when(!byPriority && top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
            .child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim)));
      };
@@ -308,10 +397,13 @@ index 4ec2d54..097cf73 100644
 +      const name = div().min_w(0).truncate().text_size(fs(12.5)).font_semibold().text_color(t.foreground)
 +        .when(Boolean(wr), (el) => el.tooltip(`${label === wr.name ? "" : `${label}\n`}${wr.project} / ${wr.task}\n${wr.root}`))
 +        .child(label);
++      const on = space === curSpace; // current space
 +      return h_flex()
 +        .id(g.id)
++        .relative() // current space
 +        .px(8)
-+        .when(!first, (el) => el.mt(rowPx(6)).border_t(1).border_color(t.border))
++        .when(!first && !on, (el) => el.mt(rowPx(6)).border_t(1).border_color(t.border)) // current space: its block draws the line
++        .when(on, (el) => el.rounded(8)) // current space: its block has the neutral tint
 +        .pt(rowPx(first ? 6 : 10)) // sidebar size
 +        .h(rowPx((first ? 30 : 36) + (branch ? 15 : 0))) // wrapper repos, sidebar size
 +        .flex_none()
@@ -335,17 +427,27 @@ index 4ec2d54..097cf73 100644
 +          .when(top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
 +          .child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim)));
 +    };
++    // current space: in "Grouped by space" the current space's header and its agents sit in one
++    // block with the Spaces list's bar down its left edge, and the current agent's own bar steps
++    // in under it:  | space  /  |  | agent.
      const rows = collapsed
        ? list.flatMap(withKids)
 -      : groups.flatMap((g) => [header(g), ...(this.folded.has(g.id) ? [] : g.members.flatMap(withKids))]);
-+      : groups.flatMap((g, i) => [
-+          g.id.startsWith("sp-") ? spaceHeader(g, i === 0) : header(g),
-+          ...(this.folded.has(g.id) ? [] : g.members.flatMap(withKids)),
-+        ]);
++      : groups.flatMap((g, i) => {
++          const block = [
++            g.id.startsWith("sp-") ? spaceHeader(g, i === 0) : header(g),
++            ...(this.folded.has(g.id) ? [] : g.members.flatMap(withKids)),
++          ];
++          if (g.id !== `sp-${curSpace}`) return block;
++          return [v_flex().id(`cur-${g.id}`).relative().flex_none().rounded(8).bg(tint(t.foreground, "1a")) // current space: a pale neutral block
++            .when(i > 0, (el) => el.mt(rowPx(6)).border_t(1).border_color(t.border))
++            .children(block)
++            .child(div().absolute().left(0).top(6).bottom(6).w(3).rounded(2).bg(t.foreground))];
++        });
  
      return v_flex()
        .size_full()
-@@ -399,44 +555,44 @@ export default class Agents extends View {
+@@ -399,44 +623,44 @@ export default class Agents extends View {
        .bg(t.chrome)
        .border_t(1)
        .border_color(t.border)
