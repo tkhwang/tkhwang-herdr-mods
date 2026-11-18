@@ -1,7 +1,16 @@
 diff --git a/main.js b/main.js
-index 4ec2d54..2dfb61f 100644
+index 4ec2d54..435d9ba 100644
 --- a/main.js
 +++ b/main.js
+@@ -3,7 +3,7 @@
+ 
+ import { View, div, image, svg } from "gpui-kit";
+ import { v_flex, h_flex } from "gpui-base";
+-import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
++import { agents, terminals, panes, focused, spaces, machines, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
+ 
+ function find(node, id) {
+   if (node?.id === id) return node;
 @@ -14,6 +14,25 @@ function find(node, id) {
    return null;
  }
@@ -38,7 +47,7 @@ index 4ec2d54..2dfb61f 100644
  const SECTION = { 4: "Needs you", 3: "Done", 2: "Working", 1: "Idle" };
  const SECTION_STATUS = { 4: "blocked", 3: "done", 2: "working" };
  
-@@ -68,6 +88,55 @@ function icon(p, size, color) {
+@@ -68,6 +88,67 @@ function icon(p, size, color) {
    return p.tint ? svg(p.icon).size(size).flex_none().text_color(color) : image(p.icon).w(size).h(size).flex_none();
  }
  
@@ -91,35 +100,57 @@ index 4ec2d54..2dfb61f 100644
 +// which name their space themselves, stay at the edge; a row's sub-terminals step in too.
 +const NEST = 22;
 +
++// current agent: the saved record of each space's agent last focused. One that can't be read,
++// or isn't a map of space to agent, starts empty rather than keep the list from loading.
++function readLast() {
++  try {
++    const saved = JSON.parse(localStorage.getItem("last") ?? "{}");
++    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
++    return Object.fromEntries(Object.entries(saved).filter(([, addr]) => typeof addr === "string"));
++  } catch (_e) {
++    return {};
++  }
++}
++
  export default class Agents extends View {
    init(_props, cx) {
      if (props()?.sortMenu) return;
-@@ -75,6 +144,7 @@ export default class Agents extends View {
+@@ -75,6 +156,7 @@ export default class Agents extends View {
      // Each agent's last state and when it changed (ms), kept across restarts.
      this.changed = JSON.parse(localStorage.getItem("changed") ?? "{}");
      this.pins = JSON.parse(localStorage.getItem("pins") ?? "[]");
-+    this.last = JSON.parse(localStorage.getItem("last") ?? "{}"); // current agent: each space's agent last focused, kept across reloads
++    this.last = readLast(); // current agent: each space's agent last focused, kept across reloads
      cx.timer.every(30000, (cx) => cx.notify());
    }
  
-@@ -110,6 +180,27 @@ export default class Agents extends View {
+@@ -110,6 +192,37 @@ export default class Agents extends View {
      if (kept.length !== this.pins.length) this.setPins(kept);
    }
  
-+  // current agent: the focused agent; when the focus is on no agent (Files, Changes, the file
-+  // tab, a shell), the current space's agent last focused, else the one in its shown tab, else its
-+  // first. So the Agents list says which agent you are with, as the Spaces list says which space.
++  // current agent: the focused agent (in a pane, or in a layout's terminal block, which Herdr
++  // reports by its terminal alone); when the focus is on no agent (Files, Changes, the file tab, a
++  // shell), the current space's agent last focused, else the one in its shown tab, else its first.
++  // So the Agents list says which agent you are with, as the Spaces list says which space.
 +  current(list) {
-+    const on = list.find((a) => a.focused);
-+    if (on) {
-+      if (this.last[on.space] !== on.address) {
-+        this.last[on.space] = on.address;
-+        const spaceIds = new Set(spaces().map((s) => s.id)); // spaces that closed drop out
-+        for (const id of Object.keys(this.last)) if (!spaceIds.has(id)) delete this.last[id];
-+        localStorage.setItem("last", JSON.stringify(this.last));
++    let dirty = false;
++    // Spaces that closed drop out, whatever has the focus; only once every machine's layout is
++    // read, so a machine still connecting doesn't lose its spaces' records.
++    if (machines().every((m) => m.layout !== "loading")) {
++      const open = new Set(spaces().map((s) => s.id));
++      for (const id of Object.keys(this.last)) {
++        if (open.has(id)) continue;
++        delete this.last[id];
++        dirty = true;
 +      }
-+      return on.address;
 +    }
++    const here = focused();
++    const on = list.find((a) => a.focused) ?? (here?.terminal && !here.pane ? list.find((a) => a.address === here.terminal) : null);
++    if (on && this.last[on.space] !== on.address) {
++      this.last[on.space] = on.address;
++      dirty = true;
++    }
++    if (dirty) localStorage.setItem("last", JSON.stringify(this.last));
++    if (on) return on.address;
 +    const space = spaces().find((s) => s.active);
 +    if (!space) return null;
 +    const mine = list.filter((a) => a.space === space.id);
@@ -130,7 +161,7 @@ index 4ec2d54..2dfb61f 100644
    since(a) {
      return this.changed[a.address]?.at ?? 0;
    }
-@@ -170,25 +261,25 @@ export default class Agents extends View {
+@@ -170,25 +283,25 @@ export default class Agents extends View {
      });
    }
  
@@ -161,7 +192,7 @@ index 4ec2d54..2dfb61f 100644
          .when(Boolean(l), el => el.border_l(1.5).border_color(t.input))
          .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(6))))
        .when(Boolean(pic), el => el.child(div().mr(8).child(pic)))
-@@ -196,15 +287,23 @@ export default class Agents extends View {
+@@ -196,15 +309,23 @@ export default class Agents extends View {
        .child(this.status(t, { status: st }, compact));
    }
  
@@ -191,7 +222,7 @@ index 4ec2d54..2dfb61f 100644
    }
  
    render(cx) {
-@@ -215,10 +314,14 @@ export default class Agents extends View {
+@@ -215,10 +336,14 @@ export default class Agents extends View {
      let list = agents();
      this.listed = new Map(list.map((a) => [a.address, a.status]));
      const all = terminals();
@@ -207,7 +238,7 @@ index 4ec2d54..2dfb61f 100644
      const byPriority = sort.id === "priority";
      const urgency = new Map(list.map((a) => [a.address, Math.max(this.rank(a), ...this.tree(all, a.address).map((s) => RANK[kidStatus(s.t, this.listed)] ?? 0))]));
      const rankOf = (a) => urgency.get(a.address);
-@@ -233,7 +336,8 @@ export default class Agents extends View {
+@@ -233,7 +358,8 @@ export default class Agents extends View {
        const subs = collapsed ? [] : this.tree(all, a.address);
        const r = row(a, i, subs);
        if (this.folded.has(a.address)) return [r];
@@ -217,7 +248,7 @@ index 4ec2d54..2dfb61f 100644
      };
  
      // The fold chevron; folded, the count too, colored by the most urgent one.
-@@ -249,7 +353,7 @@ export default class Agents extends View {
+@@ -249,7 +375,7 @@ export default class Agents extends View {
          .flex()
          .items_center()
          .rounded(4)
@@ -226,7 +257,7 @@ index 4ec2d54..2dfb61f 100644
          .text_color(open ? t.dim : (t[top] ?? t.dim))
          .cursor_pointer()
          .hover((s) => s.bg(t.hover).text_color(t.foreground))
-@@ -277,6 +381,31 @@ export default class Agents extends View {
+@@ -277,6 +403,31 @@ export default class Agents extends View {
        if (detail.get(a.address) == null && seen[`${a.space_name}\u0000`] > 1) detail.set(a.address, label(a));
      }
  
@@ -258,7 +289,7 @@ index 4ec2d54..2dfb61f 100644
      const row = (a, i, subs = []) => {
        const pic = icon(a.program, 16, t.foreground);
        const more = detail.get(a.address);
-@@ -285,18 +414,22 @@ export default class Agents extends View {
+@@ -285,18 +436,22 @@ export default class Agents extends View {
        if (collapsed) {
          return h_flex()
            .id(`ag-${a.address}`)
@@ -283,7 +314,7 @@ index 4ec2d54..2dfb61f 100644
        const isPinned = this.pins.includes(a.address);
        const pin = div()
          .id(`pin-${a.address}`)
-@@ -318,16 +451,20 @@ export default class Agents extends View {
+@@ -318,16 +473,20 @@ export default class Agents extends View {
        // Under a space header the space goes without saying; an automatic tab number says nothing.
        // Without a space header above (priority, pinned) the row names its space.
        const full = byPriority || isPinned;
@@ -308,7 +339,7 @@ index 4ec2d54..2dfb61f 100644
          .cursor_pointer()
          .hover((s) => s.bg(t.hover))
          .on_hover((on, cx) => {
-@@ -343,12 +480,14 @@ export default class Agents extends View {
+@@ -343,12 +502,14 @@ export default class Agents extends View {
              cx.notify();
            })).child(pic)))
          .child(h_flex().flex_1().min_w(0).gap(5).items_center()
@@ -326,7 +357,7 @@ index 4ec2d54..2dfb61f 100644
          .child(this.status(t, a, byPriority && !isPinned));
      };
  
-@@ -369,12 +508,12 @@ export default class Agents extends View {
+@@ -369,12 +530,12 @@ export default class Agents extends View {
        return h_flex()
          .id(g.id)
          .px(8)
@@ -342,7 +373,7 @@ index 4ec2d54..2dfb61f 100644
          .font_medium()
          .cursor_pointer()
          .hover((s) => s.text_color(t.foreground))
-@@ -389,9 +528,72 @@ export default class Agents extends View {
+@@ -389,9 +550,72 @@ export default class Agents extends View {
            .when(!byPriority && top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
            .child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim)));
      };
@@ -416,7 +447,7 @@ index 4ec2d54..2dfb61f 100644
  
      return v_flex()
        .size_full()
-@@ -399,44 +601,44 @@ export default class Agents extends View {
+@@ -399,44 +623,44 @@ export default class Agents extends View {
        .bg(t.chrome)
        .border_t(1)
        .border_color(t.border)
