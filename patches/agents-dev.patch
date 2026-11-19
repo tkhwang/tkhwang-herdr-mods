@@ -1,5 +1,5 @@
 diff --git a/main.js b/main.js
-index 4ec2d54..435d9ba 100644
+index 4ec2d54..2a7a6da 100644
 --- a/main.js
 +++ b/main.js
 @@ -3,7 +3,7 @@
@@ -314,11 +314,12 @@ index 4ec2d54..435d9ba 100644
        const isPinned = this.pins.includes(a.address);
        const pin = div()
          .id(`pin-${a.address}`)
-@@ -318,16 +473,20 @@ export default class Agents extends View {
+@@ -318,16 +473,22 @@ export default class Agents extends View {
        // Under a space header the space goes without saying; an automatic tab number says nothing.
        // Without a space header above (priority, pinned) the row names its space.
        const full = byPriority || isPinned;
 -      const name = full ? a.space_name || label(a) : more ?? (/^\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a));
++      const inset = !full && a.space === curSpace; // current space: inset the whole row, including its background
 +      const name = full ? spaceName(a.space, a.space_name) || label(a) : more ?? (/^\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a)); // wrapper repos
 +      const repo = repoOf(a); // wrapper repos
        return h_flex()
@@ -326,7 +327,8 @@ index 4ec2d54..435d9ba 100644
 -        .px(8)
 -        .h(30)
 +        .relative() // status mark
-+        .pl(full ? 8 : 8 + NEST) // nested rows
++        .pl(full || inset ? 8 : 8 + NEST) // nested rows
++        .when(inset, (el) => el.ml(NEST).mr(6)) // current space: keep neutral space visible around the row
 +        .pr(8)
 +        .h(rowPx(30)) // sidebar size
          .flex_none()
@@ -335,11 +337,11 @@ index 4ec2d54..435d9ba 100644
          .gap(9)
 -        .when(a.focused, (el) => el.bg(t.selected))
 +        .when(isCur(a) || a.status === "working" || a.status === "blocked", (el) => el.bg(isCur(a) ? agentTint(a.status, t) : rowTint(false, a.status, t))) // current highlight, status mark
-+        .when(isCur(a), (el) => el.child(currentBar(t, full ? 0 : NEST))) // current highlight: nested under its space's bar
++        .when(isCur(a), (el) => el.child(currentBar(t, full || inset ? 0 : NEST))) // current highlight: nested under its space's bar
          .cursor_pointer()
          .hover((s) => s.bg(t.hover))
          .on_hover((on, cx) => {
-@@ -343,12 +502,14 @@ export default class Agents extends View {
+@@ -343,12 +504,14 @@ export default class Agents extends View {
              cx.notify();
            })).child(pic)))
          .child(h_flex().flex_1().min_w(0).gap(5).items_center()
@@ -357,7 +359,7 @@ index 4ec2d54..435d9ba 100644
          .child(this.status(t, a, byPriority && !isPinned));
      };
  
-@@ -369,12 +530,12 @@ export default class Agents extends View {
+@@ -369,12 +532,12 @@ export default class Agents extends View {
        return h_flex()
          .id(g.id)
          .px(8)
@@ -373,7 +375,7 @@ index 4ec2d54..435d9ba 100644
          .font_medium()
          .cursor_pointer()
          .hover((s) => s.text_color(t.foreground))
-@@ -389,9 +550,72 @@ export default class Agents extends View {
+@@ -389,9 +552,74 @@ export default class Agents extends View {
            .when(!byPriority && top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
            .child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim)));
      };
@@ -404,6 +406,7 @@ index 4ec2d54..435d9ba 100644
 +        .px(8)
 +        .when(!first && !on, (el) => el.mt(rowPx(6)).border_t(1).border_color(t.border)) // current space: its block draws the line
 +        .when(on, (el) => el.rounded(8)) // current space: its block has the neutral tint
++        .when(on && open, (el) => el.mb(rowPx(4))) // current space: separate its heading from the inset rows
 +        .pt(rowPx(first ? 6 : 10)) // sidebar size
 +        .h(rowPx((first ? 30 : 36) + (branch ? 15 : 0))) // wrapper repos, sidebar size
 +        .flex_none()
@@ -441,13 +444,14 @@ index 4ec2d54..435d9ba 100644
 +          if (g.id !== `sp-${curSpace}`) return block;
 +          return [v_flex().id(`cur-${g.id}`).relative().flex_none().rounded(8).bg(tint(t.foreground, "1a")) // current space: a pale neutral block
 +            .when(i > 0, (el) => el.mt(rowPx(6)).border_t(1).border_color(t.border))
++            .when(!this.folded.has(g.id), (el) => el.pb(rowPx(6))) // current space: breathing room below the last row
 +            .children(block)
 +            .child(div().absolute().left(0).top(6).bottom(6).w(3).rounded(2).bg(t.foreground))];
 +        });
  
      return v_flex()
        .size_full()
-@@ -399,44 +623,44 @@ export default class Agents extends View {
+@@ -399,44 +627,44 @@ export default class Agents extends View {
        .bg(t.chrome)
        .border_t(1)
        .border_color(t.border)
