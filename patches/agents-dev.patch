@@ -1,5 +1,5 @@
 diff --git a/main.js b/main.js
-index 4ec2d54..2a7a6da 100644
+index 4ec2d54..85ffc28 100644
 --- a/main.js
 +++ b/main.js
 @@ -3,7 +3,7 @@
@@ -161,12 +161,12 @@ index 4ec2d54..2a7a6da 100644
    since(a) {
      return this.changed[a.address]?.at ?? 0;
    }
-@@ -170,25 +283,25 @@ export default class Agents extends View {
+@@ -170,25 +283,26 @@ export default class Agents extends View {
      });
    }
  
 -  subRow(t, s, shown, compact) {
-+  subRow(t, s, shown, compact, nested = false) {
++  subRow(t, s, shown, compact, nested = false, inset = false) {
      const k = s.t;
      const st = kidStatus(k, this.listed);
      const pic = icon(k.program, 14, t.foreground);
@@ -174,7 +174,8 @@ index 4ec2d54..2a7a6da 100644
      return h_flex()
        .id(`sub-${k.address}`)
 -      .pl(39)
-+      .pl(nested ? 39 + NEST : 39) // nested rows
++      .pl(nested && !inset ? 39 + NEST : 39) // nested rows
++      .when(inset, (el) => el.ml(NEST).mr(6)) // current space: inset selection and hover backgrounds with the parent
        .pr(8)
        .rounded(8)
 -      .h(26)
@@ -192,7 +193,7 @@ index 4ec2d54..2a7a6da 100644
          .when(Boolean(l), el => el.border_l(1.5).border_color(t.input))
          .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(6))))
        .when(Boolean(pic), el => el.child(div().mr(8).child(pic)))
-@@ -196,15 +309,23 @@ export default class Agents extends View {
+@@ -196,15 +310,23 @@ export default class Agents extends View {
        .child(this.status(t, { status: st }, compact));
    }
  
@@ -222,7 +223,7 @@ index 4ec2d54..2a7a6da 100644
    }
  
    render(cx) {
-@@ -215,10 +336,14 @@ export default class Agents extends View {
+@@ -215,10 +337,14 @@ export default class Agents extends View {
      let list = agents();
      this.listed = new Map(list.map((a) => [a.address, a.status]));
      const all = terminals();
@@ -238,17 +239,18 @@ index 4ec2d54..2a7a6da 100644
      const byPriority = sort.id === "priority";
      const urgency = new Map(list.map((a) => [a.address, Math.max(this.rank(a), ...this.tree(all, a.address).map((s) => RANK[kidStatus(s.t, this.listed)] ?? 0))]));
      const rankOf = (a) => urgency.get(a.address);
-@@ -233,7 +358,8 @@ export default class Agents extends View {
+@@ -233,7 +359,9 @@ export default class Agents extends View {
        const subs = collapsed ? [] : this.tree(all, a.address);
        const r = row(a, i, subs);
        if (this.folded.has(a.address)) return [r];
 -      return [r, ...subs.map((s) => this.subRow(t, s, shown, byPriority))];
 +      const nested = !byPriority && !this.pins.includes(a.address); // nested rows
-+      return [r, ...subs.map((s) => this.subRow(t, s, shown, byPriority, nested))];
++      const inset = nested && a.space === curSpace; // current space: sub-terminals share their parent row margins
++      return [r, ...subs.map((s) => this.subRow(t, s, shown, byPriority, nested, inset))];
      };
  
      // The fold chevron; folded, the count too, colored by the most urgent one.
-@@ -249,7 +375,7 @@ export default class Agents extends View {
+@@ -249,7 +377,7 @@ export default class Agents extends View {
          .flex()
          .items_center()
          .rounded(4)
@@ -257,7 +259,7 @@ index 4ec2d54..2a7a6da 100644
          .text_color(open ? t.dim : (t[top] ?? t.dim))
          .cursor_pointer()
          .hover((s) => s.bg(t.hover).text_color(t.foreground))
-@@ -277,6 +403,31 @@ export default class Agents extends View {
+@@ -277,6 +405,31 @@ export default class Agents extends View {
        if (detail.get(a.address) == null && seen[`${a.space_name}\u0000`] > 1) detail.set(a.address, label(a));
      }
  
@@ -289,7 +291,7 @@ index 4ec2d54..2a7a6da 100644
      const row = (a, i, subs = []) => {
        const pic = icon(a.program, 16, t.foreground);
        const more = detail.get(a.address);
-@@ -285,18 +436,22 @@ export default class Agents extends View {
+@@ -285,18 +438,22 @@ export default class Agents extends View {
        if (collapsed) {
          return h_flex()
            .id(`ag-${a.address}`)
@@ -314,7 +316,7 @@ index 4ec2d54..2a7a6da 100644
        const isPinned = this.pins.includes(a.address);
        const pin = div()
          .id(`pin-${a.address}`)
-@@ -318,16 +473,22 @@ export default class Agents extends View {
+@@ -318,16 +475,22 @@ export default class Agents extends View {
        // Under a space header the space goes without saying; an automatic tab number says nothing.
        // Without a space header above (priority, pinned) the row names its space.
        const full = byPriority || isPinned;
@@ -341,7 +343,7 @@ index 4ec2d54..2a7a6da 100644
          .cursor_pointer()
          .hover((s) => s.bg(t.hover))
          .on_hover((on, cx) => {
-@@ -343,12 +504,14 @@ export default class Agents extends View {
+@@ -343,12 +506,14 @@ export default class Agents extends View {
              cx.notify();
            })).child(pic)))
          .child(h_flex().flex_1().min_w(0).gap(5).items_center()
@@ -359,7 +361,7 @@ index 4ec2d54..2a7a6da 100644
          .child(this.status(t, a, byPriority && !isPinned));
      };
  
-@@ -369,12 +532,12 @@ export default class Agents extends View {
+@@ -369,12 +534,12 @@ export default class Agents extends View {
        return h_flex()
          .id(g.id)
          .px(8)
@@ -375,7 +377,7 @@ index 4ec2d54..2a7a6da 100644
          .font_medium()
          .cursor_pointer()
          .hover((s) => s.text_color(t.foreground))
-@@ -389,9 +552,74 @@ export default class Agents extends View {
+@@ -389,9 +554,74 @@ export default class Agents extends View {
            .when(!byPriority && top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
            .child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim)));
      };
@@ -451,7 +453,7 @@ index 4ec2d54..2a7a6da 100644
  
      return v_flex()
        .size_full()
-@@ -399,44 +627,44 @@ export default class Agents extends View {
+@@ -399,44 +629,44 @@ export default class Agents extends View {
        .bg(t.chrome)
        .border_t(1)
        .border_color(t.border)
