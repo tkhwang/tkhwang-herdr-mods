@@ -6,7 +6,7 @@ index 0000000..037f6c8
 @@ -0,0 +1 @@
 +<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
 diff --git a/main.js b/main.js
-index a893bae..70feba1 100644
+index a893bae..40d9639 100644
 --- a/main.js
 +++ b/main.js
 @@ -1,9 +1,34 @@
@@ -875,7 +875,7 @@ index a893bae..70feba1 100644
    renderSidebarHeader(t) {
      const head = h_flex()
        .h(44)
-@@ -830,6 +1464,18 @@ export default class Changes extends View {
+@@ -830,6 +1464,21 @@ export default class Changes extends View {
            .child(div().font_semibold().text_size(em(0.9)).child(label))
            .child(div().text_size(em(0.8)).text_color(t.dim).child(String(count)))
            .child(div().flex_1())
@@ -886,7 +886,10 @@ index a893bae..70feba1 100644
 +                this.conflicts ? "Resolve conflicts before discarding all" : "Discard all changes",
 +                (cx) => this.discard(null, cx),
 +                t,
-+                !count || this.conflicts || this.busy,
++                // Off while no repository is loaded: on the way to another one the count here
++                // is still that of the repository left behind, and a press confirmed then would
++                // run on the new one once it is read, before its changes were ever listed.
++                !this.root || !count || this.conflicts || this.busy,
 +                22,
 +              ),
 +            ),
@@ -894,7 +897,7 @@ index a893bae..70feba1 100644
            .child(
              this.icon(
                `changes-${action}-all`,
-@@ -892,7 +1538,7 @@ export default class Changes extends View {
+@@ -892,7 +1541,7 @@ export default class Changes extends View {
      const chevron = this.closed.has(closedKey) ? "chevron-right" : "chevron-down";
      return h_flex()
        .id(`changes-folder-${scope}-${row.path}`)
@@ -903,7 +906,7 @@ index a893bae..70feba1 100644
        .pl(8 + row.depth * 14)
        .gap(6)
        .flex_none()
-@@ -900,22 +1546,130 @@ export default class Changes extends View {
+@@ -900,22 +1549,130 @@ export default class Changes extends View {
        .rounded(5)
        .cursor_pointer()
        .hover((el) => el.bg(t.hover))
@@ -1037,7 +1040,7 @@ index a893bae..70feba1 100644
        this.stagedCount &&
        !this.conflicts,
      );
-@@ -925,53 +1679,65 @@ export default class Changes extends View {
+@@ -925,53 +1682,65 @@ export default class Changes extends View {
        .flex_none()
        .border_t(1)
        .border_color(t.border)
@@ -1125,7 +1128,7 @@ index a893bae..70feba1 100644
            ),
        );
    }
-@@ -999,7 +1765,11 @@ export default class Changes extends View {
+@@ -999,7 +1768,11 @@ export default class Changes extends View {
        .flex_none()
        .border_b(1)
        .border_color(t.border)
@@ -1138,7 +1141,7 @@ index a893bae..70feba1 100644
        .child(
          div()
            .flex_1()
-@@ -1061,7 +1831,7 @@ export default class Changes extends View {
+@@ -1061,7 +1834,7 @@ export default class Changes extends View {
        root.child(
          div().p(14).text_color(t.dim).child("Select a changed file in Changes to view its diff."),
        );
@@ -1147,7 +1150,7 @@ index a893bae..70feba1 100644
      const split = this.diffLayout === "split";
      if (split)
        root.child(
-@@ -1116,12 +1886,14 @@ export default class Changes extends View {
+@@ -1116,12 +1889,14 @@ export default class Changes extends View {
        this.pairedRows = splitDiffRows(this.rows);
      }
      const rows = split ? this.pairedRows : this.rows;
@@ -1163,7 +1166,7 @@ index a893bae..70feba1 100644
        .text_size(em(1));
      if (split)
        viewport.child(
-@@ -1130,7 +1902,7 @@ export default class Changes extends View {
+@@ -1130,7 +1905,7 @@ export default class Changes extends View {
            rows.length,
            height,
            (i) => String(i),
@@ -1172,7 +1175,7 @@ index a893bae..70feba1 100644
          )
            .size_full()
            .on_scroll_wheel((e, cx) => {
-@@ -1159,7 +1931,9 @@ export default class Changes extends View {
+@@ -1159,7 +1934,9 @@ export default class Changes extends View {
                    height,
                    (i) => String(i),
                    (range) =>
@@ -1183,7 +1186,7 @@ index a893bae..70feba1 100644
                  ).size_full(),
                ),
            ),
-@@ -1187,7 +1961,7 @@ export default class Changes extends View {
+@@ -1187,7 +1964,7 @@ export default class Changes extends View {
      cx.notify();
    }
  
@@ -1192,7 +1195,7 @@ index a893bae..70feba1 100644
      if (row.kind !== "pair")
        return div()
          .h(height)
-@@ -1213,7 +1987,7 @@ export default class Changes extends View {
+@@ -1213,7 +1990,7 @@ export default class Changes extends View {
            .items_center()
            .overflow_hidden()
            .when(side === "right", (el) => el.border_l(1).border_color(t.border))
@@ -1201,7 +1204,7 @@ index a893bae..70feba1 100644
            .when(!entry, (el) => el.bg(t.raised))
            .child(
              div()
-@@ -1237,13 +2011,11 @@ export default class Changes extends View {
+@@ -1237,13 +2014,11 @@ export default class Changes extends View {
                .overflow_hidden()
                .tooltip(entry?.text || "")
                .child(
@@ -1218,7 +1221,7 @@ index a893bae..70feba1 100644
                ),
            ),
        );
-@@ -1251,7 +2023,7 @@ export default class Changes extends View {
+@@ -1251,7 +2026,7 @@ export default class Changes extends View {
      return line;
    }
  
@@ -1227,7 +1230,7 @@ index a893bae..70feba1 100644
      if (row.kind === "@")
        return div().h(height).px(12).w_full().bg(t.raised).text_color(t.accent).child(row.text);
      const color = row.kind === "+" ? t.ansi2 : row.kind === "-" ? t.ansi1 : t.foreground;
-@@ -1260,7 +2032,7 @@ export default class Changes extends View {
+@@ -1260,7 +2035,7 @@ export default class Changes extends View {
        .w_full()
        .gap(8)
        .items_center()
@@ -1236,7 +1239,7 @@ index a893bae..70feba1 100644
        .child(
          div()
            .w(38)
-@@ -1278,13 +2050,6 @@ export default class Changes extends View {
+@@ -1278,13 +2053,6 @@ export default class Changes extends View {
            .child(row.next === undefined ? "" : String(row.next)),
        )
        .child(div().w(12).flex_none().text_color(color).child(row.kind))
