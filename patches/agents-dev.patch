@@ -1,5 +1,5 @@
 diff --git a/main.js b/main.js
-index 4ec2d54..5cb321d 100644
+index 4ec2d54..de18c4f 100644
 --- a/main.js
 +++ b/main.js
 @@ -3,7 +3,7 @@
@@ -424,8 +424,8 @@ index 4ec2d54..5cb321d 100644
 +          .text_size(fs(letter.length > 1 ? 8 : 9.5)).font_bold().text_color("#ffffff").child(letter)) // space initials
 +        .child(branch // wrapper repos
 +          ? v_flex().min_w(0).gap(1).child(name).child(h_flex().min_w(0).gap(4).items_center()
-+            .child(svg("mods/workspace-chrome/git-branch.svg").size(11).flex_none().text_color(t.dim))
-+            .child(div().min_w(0).truncate().text_size(fs(11)).text_color(t.dim).child(branch)))
++            .child(svg("mods/workspace-chrome/git-branch.svg").size(11).flex_none().text_color(t.ansi2 ?? t.dim)) // branch color: green, apart from yellow (off-branch in Spaces), accent and working blue
++            .child(div().min_w(0).truncate().text_size(fs(11)).text_color(t.ansi2 ?? t.dim).child(branch)))
 +          : name)
 +        .when(!open, (el) => el.child(div().flex_none().text_size(fs(11)).text_color(t.dim).child(String(g.members.length))))
 +        .child(div().flex_1())

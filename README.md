@@ -211,7 +211,7 @@ Its state is the shared `tkhwang-update`. What it checks is `REPO` and `BRANCH` 
 <details>
 <summary><b><code>agents-dev</code></b> · Agents list · clone of Herdr's <code>agents</code> 0.1.11</summary>
 
-**Markers:** `space headers`, `status mark`, `current highlight`, `current agent`, `current space`, `nested rows`, `wrapper repos`, `sidebar size`
+**Markers:** `space headers`, `status mark`, `current highlight`, `current agent`, `current space`, `nested rows`, `wrapper repos`, `sidebar size`, `branch color`
 
 "Grouped by space" headers with the space's colored initials (as the Spaces list draws them; marked `space initials`), bold name and separators, without ahead, behind or PRs (the Spaces list shows a space's git state, the Agents list who works where); patch marked `space headers`. Until a sort is picked it groups by space (the shipped default is Priority, which has no space headers); the pick is kept by the app, not in this repo.
 
@@ -221,7 +221,7 @@ Inside the current space block, agent rows use a 22px left margin and a 6px righ
 
 Under a space header each agent row, and its sub-terminal rows, steps in 22px (the header's avatar and gap, the depth the Spaces list nests a worktree at), so the space reads as the heading and its agents as the items under it; pinned and priority rows, which name their space themselves, stay at the edge (marked `nested rows`; the `NEST` constant sets the depth).
 
-A workbranch task space's header is named and lettered as in the Spaces list: a task of one repo after the repo, a task of several after its task folder, with the task's branch on a line under the name (it says which task): a lone repo's, or several repos' when they are all on the same one (none when they differ); in a task of several repos an agent's row names the repo its folder is in (`backend`; nothing at the task's own folder), read from `better-spaces`' shared `better-spaces.wrappers` (marked `wrapper repos`).
+A workbranch task space's header is named and lettered as in the Spaces list: a task of one repo after the repo, a task of several after its task folder, with the task's branch on a line under the name in green (it says which task; marked `branch color`): a lone repo's, or several repos' when they are all on the same one (none when they differ); in a task of several repos an agent's row names the repo its folder is in (`backend`; nothing at the task's own folder), read from `better-spaces`' shared `better-spaces.wrappers` (marked `wrapper repos`).
 
 The layout's `agents` block props size the list the same way as the Spaces list's, in the interface font (marked `sidebar size`; `fs` and `rowPx` at the top of `main.js`): `font_size` stands for the 13 px the shipped list is drawn at and every text size scales with it (12 here), and `row_scale` multiplies every row and header height (0.85 here). Without them it keeps the shipped sizes, which don't follow the interface text size. The sort menu, an overlay with its own props, keeps them too.
 
