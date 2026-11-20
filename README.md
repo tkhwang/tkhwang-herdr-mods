@@ -29,6 +29,7 @@ After a first `apply`, restart Herdr (it sees new mod folders at start) and pick
 | **Side panel, Git**<br>`git-graph` | a commit graph, or a Manygit list in a folder of repos |
 | **Terminal**<br>copy-on-select | copies a selection on mouse release |
 | **Update pill**<br>`tkhwang-update` | when `main` here has commits the app doesn't, a pill at the bottom of the window, like Herdr's own: **What changed** lists the pull requests and commits since, **Update** downloads that commit from GitHub and runs its `./sync.sh apply`, then "Updated to …" until closed |
+| **Mod settings**<br>`better-config` | **⌘⌥,** opens a dialog of every installed mod's settings, drawn like Herdr's own Settings, and a list of the installed mods; a value is checked before it's written to that mod's `mod.json`, and `./sync.sh backup` keeps it in `config/mod-settings.json` |
 | **Theme**<br>Catppuccin | Mocha in dark mode, Latte in light mode, a `#60b9fc` accent |
 
 `tabs-dev`, `spaces-dev`, `changes-dev` and `files-dev` stay installed as fallbacks: put one back in the layout's tabs, spaces, changes or files block to switch. `files-dev` was the Files panel before `file-icons`; back in the files block, Files shows the folder Changes and Git show again, with the folder bar. `tabs-dev` was the tab bar before `better-tabs`, and what only it opens isn't reachable from `better-tabs`: the **Open with Zed** `+` menu (`herdr-open-with-zed`) and the Markdown icon, which opens the file tab on the Markdown file `files-dev` or Changes is on. Its window switch moved out into `tkhwang-view-mode`; with `tabs-dev` back, take the layout's `view-mode` block out, or both switches fold windows.
@@ -44,7 +45,7 @@ Other people's code and mine are kept apart, so it is always clear what I change
 | `patches/<mod>.patch` | mine | everything I changed in that mod, as one diff against its upstream |
 | `own/shared/` | mine | files several mods carry the same copy of: `panel-folder.js`, `markdown.js`, `syntax.js`, `ports.js`, `play.svg`, `pause.svg`, `stop.svg` |
 | `own/mods/<mod>/` | mine | mods written from scratch: `tkhwang-view-mode`, `tkhwang-markdown`, `tkhwang-update` |
-| `config/` | mine | `layouts/tkhwang-herdr.json`, `settings.json`, `keys.json` |
+| `config/` | mine | `layouts/tkhwang-herdr.json`, `settings.json`, `keys.json`; `mod-settings.json`, each mod's `settings` (below) |
 | `licenses/<source>/` | theirs | each source's `LICENSE` and `NOTICE`, as shipped at the pinned commit; `NOTICE-<commit>` beside it while mods from one source are pinned at different commits |
 | `sources.json` | | where each mod comes from: repo, path, commit (and tag), license, extra files, shared files |
 
@@ -52,7 +53,8 @@ Other people's code and mine are kept apart, so it is always clear what I change
 upstream/<mod>/ ─────────┐
 upstream/<mod>.extra/ ───┤
 patches/<mod>.patch ─────┼─ build ─▶ build/mods/<mod>/ ─ apply ─▶ ~/.config/herdr-app/mods/<mod>/
-own/shared/<file> ───────┘                                                     │
+own/shared/<file> ───────┤                                                     │
+config/mod-settings.json ┘                                                     │
 patches/, own/, config/ ◀──────────────────── backup ─────────────────────────┘
 ```
 
@@ -81,6 +83,8 @@ The themes have no license either: `apply` downloads them at the pinned commit a
 
 **Day to day.** Change a mod or the layout in the app, which reloads at once, then `./sync.sh backup` and commit. The commit shows my change and nothing else: `backup` rewrites each mod's patch against its upstream and puts the shared files back in `own/shared/`. It stops, changing nothing, if the copies of a shared file in the app differ.
 
+**Mod settings.** A mod's settings are the values in its installed `mod.json` under `settings`: only what I changed, the mod's code has the defaults. `better-config` (⌘⌥,) edits them in the app. They're kept in `config/mod-settings.json`, one entry per mod, and never in `patches/` or `own/`: `backup` takes each mod's `settings` block out into that file and, when the rest of the `mod.json` is what the build had (better-config rewrites the whole file in its own layout), puts back the built text, so the patch holds only code; `build` writes each entry into the mod's built `mod.json` after its patch and shared files. So an upstream release that changes its `mod.json` merges without my values in the way, and a reset in better-config (which drops the key, or the whole block) leaves the entry out at the next `backup`. Fetched mods (copy-on-select) take no settings here.
+
 **Taking upstream releases.** `./sync.sh update` takes every upstream in `sources.json` to its newest version, one at a time, and moves only the ones my changes still go onto; the others stay exactly as they were, and it says why. The newest version is, for a Herdr clone, the version of Herdr installed here (`herdr-app --version`; Herdr's newest release when it isn't installed), since that is the app the clone runs in; for a mod pinned at a tag, the newest release tag; for any other, the head of its repo's default branch. A mod whose folder upstream didn't change keeps its pin.
 
 For each mod it merges three ways, file by file: the old upstream, the old upstream with my patch, and the new upstream. A Herdr clone's two upstreams first get what Herdr's `mod.clone` does to a clone, which my patch carries: its own asset paths and overlay names renamed (`mods/agents/…` to `mods/agents-dev/…`) and `cloned_from` in `mod.json`. So the merge sees only my changes, new code from Herdr names the clone's own files, and `cloned_from` takes the new version. The mod moves when every file merges, my patch against the new upstream builds exactly the merged files, and `herdr-app check` passes the mod with its shared files. Then `upstream/<mod>/` and its extra files, the patch and the pins in `sources.json` are written together. A mod's extra files (`upstream/<mod>.extra/`) follow the head of their own repos in the same merge. A fetched mod or a theme only moves its pin, and a theme its sha256, once its files are there and check out.
@@ -100,7 +104,7 @@ To take one that stayed by hand, `./sync.sh update agents-dev` (or with a ref: `
 
 ## Before you apply
 
-- **What runs, and what reaches the network.** `better-spaces` runs `git`, `hc` and `gh` (GitHub with your local `gh` login). The sparkle **Message** button in `better-changes` runs `claude -p`, so the staged diff goes to Anthropic through your Claude Code login, and its Push button runs `git push` with your git credentials. `git-graph` reaches the network only on Fetch, Pull, Push or deleting a remote branch, and asks GitHub's releases API once a day for a newer release. `tkhwang-update` asks GitHub's public API every 3 hours for this repository's newest commit on `main` (and, when that moved, for the commits since the installed one), with no token and nothing about you; its **Update** downloads that commit from GitHub and runs its `sync.sh apply`. `markdown-browser` uses no network. `file-icons` runs `sh` to list folders and `git` to read status, on the space's machine, and uses no network. `tkhwang-markdown` runs `git` only to read (the Diff view, on the file's machine), writes only the file you edit in it, and uses no network.
+- **What runs, and what reaches the network.** `better-spaces` runs `git`, `hc` and `gh` (GitHub with your local `gh` login). The sparkle **Message** button in `better-changes` runs `claude -p`, so the staged diff goes to Anthropic through your Claude Code login, and its Push button runs `git push` with your git credentials. `git-graph` reaches the network only on Fetch, Pull, Push or deleting a remote branch, and asks GitHub's releases API once a day for a newer release. `tkhwang-update` asks GitHub's public API every 3 hours for this repository's newest commit on `main` (and, when that moved, for the commits since the installed one), with no token and nothing about you; its **Update** downloads that commit from GitHub and runs its `sync.sh apply`. `markdown-browser` uses no network. `file-icons` runs `sh` to list folders and `git` to read status, on the space's machine, and uses no network. `tkhwang-markdown` runs `git` only to read (the Diff view, on the file's machine), writes only the file you edit in it, and uses no network. `better-config` runs `sh` to list `mods/` and `mkdir` for `~/.config/herdr-mods/better-config/`, writes only the `mod.json` of a mod whose setting you change and its copy there, and uses no network.
 - **Workbranch wrappers.** In a folder of repos that is not a repo itself, `better-changes` and `changes-dev` show a repo picker, `git-graph` shows a Manygit list, and `better-spaces` and `agents-dev` name a workbranch task space (a `.workbranch.task` file beside its repos, or a folder of repos right under a project's `.workbranch.config` other than `_base`) after its repo with the branch under it when it holds one repo, and after its task folder when it holds several, since those repos are the same in every task; there `better-spaces` shows the project under the name and a repo's branch only when it isn't the task's (no PR status for a task folder). A plain folder of repos and a project's own folder keep their names.
 - **Theme picks.** A theme picked in Settings > Look is kept per layout in `layouts/.state/`; pick the Catppuccin themes there again if one was picked before.
 - **Command time limit.** Herdr stops a command after 30 s, so a slow fetch or push in `git-graph` can fail.
@@ -123,7 +127,7 @@ Clone of the shipped `main` layout; its spaces block points to `better-spaces`, 
 <details>
 <summary><b><code>config/settings.json</code>, <code>config/keys.json</code></b> · app look and keys</summary>
 
-App look and keys; `keys.json` also carries markdown-browser's `mod:markdown-browser` section (`⌘⇧O`).
+App look and keys; `keys.json` also carries markdown-browser's `mod:markdown-browser` section (`⌘⇧O`) and better-config's `cmd-alt-,` (`⌘⌥,`).
 
 </details>
 
@@ -391,6 +395,13 @@ Its icons also show in Changes (`better-changes`' `file icons` reads them from `
 `kind: oss` without a patch, and the `fetch` mod and themes, which aren't kept here.
 
 <details>
+<summary><b><code>better-config</code></b> · mod settings dialog · <a href="https://github.com/munza/herdr-mods/tree/main/better-config">munza/herdr-mods</a> at <code>1abf487</code> (0.2.0), unchanged</summary>
+
+[munza/herdr-mods](https://github.com/munza/herdr-mods/tree/main/better-config) at `1abf487` (0.2.0 in its `mod.json`), unchanged: a dialog (`place: none`, so no block in the layout) that `cmd-alt-,` in `config/keys.json` opens (`mod.open:better-config`). On the left, each installed mod that has settings, in its `mod.json` or described by a `mod.schema.json` beside it (`better-tabs` ships one); on the right, that mod's settings with a switch, choices, − and + or a text box each, checked before saving, a dot on what differs from the default, and **Reset**. **Installed mods** lists every folder in `mods/`, under Yours or Herdr's. A change is written to that mod's `mod.json` alone, and Herdr reloads the mod; `./sync.sh backup` then moves it into `config/mod-settings.json` (Mod settings, above). It also keeps a copy of what I changed in `~/.config/herdr-mods/better-config/<mod>.json`, outside the app folder, and when an `apply` or an update put a default back over one, a box at the top offers to restore it. It runs `/bin/sh` (`ls`) to list `mods/` and `mkdir` for that folder, reads `layout()` and `keys.json`, and reaches no network. Apache-2.0 ([`licenses/herdr-mods/LICENSE`](licenses/herdr-mods/LICENSE), [`licenses/herdr-mods/NOTICE-1abf487`](licenses/herdr-mods/NOTICE-1abf487)); `./sync.sh update` takes that repo's new commits to it. It has no patch here.
+
+</details>
+
+<details>
 <summary><b><code>herdr-open-with-zed</code></b> · <code>+</code> menu · <a href="https://github.com/atleugim/herdr-open-with-zed">atleugim/herdr-open-with-zed</a> at <code>a15570e</code>, unchanged</summary>
 
 [atleugim/herdr-open-with-zed](https://github.com/atleugim/herdr-open-with-zed) at `a15570e`, unchanged: Herdr's `+` menu (`new-menu` 0.1.11) with an **Open with Zed** row that opens the focused terminal's folder in Zed (`zed`, else `zeditor`, else `open -a Zed`). `tabs-dev`'s `+` opens it; `better-tabs`' `+` opens Herdr's own `new-menu`, so it isn't reachable while the layout uses `better-tabs`. Apache-2.0 ([`licenses/herdr-open-with-zed/LICENSE`](licenses/herdr-open-with-zed/LICENSE)); `./sync.sh update` takes that repo's new commits to it. It has no patch here.
@@ -416,7 +427,7 @@ Its icons also show in Changes (`better-changes`' `file icons` reads them from `
 | Code | From | License |
 | --- | --- | --- |
 | `upstream/agents-dev`, `changes-dev`, `files-dev`, `spaces-dev`, `tabs-dev` | Herdr's own mods ([herdrdev/herdr-app](https://github.com/herdrdev/herdr-app)) | Apache-2.0, [`licenses/herdr`](licenses/herdr) |
-| `upstream/better-spaces`, `better-changes`, `better-tabs` | [munza/herdr-mods](https://github.com/munza/herdr-mods) | Apache-2.0, [`licenses/herdr-mods`](licenses/herdr-mods) (`LICENSE`; `NOTICE` at `77d94f7` for `better-spaces` and `better-changes`, `NOTICE-6e2ffe0` for `better-tabs`) |
+| `upstream/better-spaces`, `better-changes`, `better-tabs`, `better-config` | [munza/herdr-mods](https://github.com/munza/herdr-mods) | Apache-2.0, [`licenses/herdr-mods`](licenses/herdr-mods) (`LICENSE`; `NOTICE` at `77d94f7` for `better-spaces` and `better-changes`, `NOTICE-6e2ffe0` for `better-tabs`, `NOTICE-1abf487` for `better-config`) |
 | `upstream/better-spaces.extra/navigation.js` | [filipores/herdr-spaces-status](https://github.com/filipores/herdr-spaces-status) | Apache-2.0, [`licenses/herdr-spaces-status`](licenses/herdr-spaces-status) (`LICENSE`, `NOTICE`) |
 | `upstream/better-changes.extra/lookup.js`, `icons.js` | [LaiqianDS/herdr-mods](https://github.com/LaiqianDS/herdr-mods)' file-icons | MIT, [`licenses/file-icons`](licenses/file-icons) |
 | `upstream/herdr-open-with-zed` | [atleugim/herdr-open-with-zed](https://github.com/atleugim/herdr-open-with-zed) | Apache-2.0, [`licenses/herdr-open-with-zed`](licenses/herdr-open-with-zed) |
