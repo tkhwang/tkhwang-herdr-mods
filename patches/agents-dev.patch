@@ -1,5 +1,5 @@
 diff --git a/main.js b/main.js
-index 4ec2d54..de18c4f 100644
+index 4ec2d54..f99b310 100644
 --- a/main.js
 +++ b/main.js
 @@ -3,7 +3,7 @@
@@ -377,7 +377,7 @@ index 4ec2d54..de18c4f 100644
          .font_medium()
          .cursor_pointer()
          .hover((s) => s.text_color(t.foreground))
-@@ -389,9 +554,75 @@ export default class Agents extends View {
+@@ -389,9 +554,79 @@ export default class Agents extends View {
            .when(!byPriority && top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
            .child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim)));
      };
@@ -398,6 +398,10 @@ index 4ec2d54..de18c4f 100644
 +      const label = spaceName(space, g.label);
 +      const common = wr?.repos.length && wr.repos.every((r) => r.branch && r.branch === wr.repos[0].branch) ? wr.repos[0].branch : null;
 +      const branch = common ? (common === "(detached)" ? "detached" : common) : null; // none: not read yet, or repos differ
++      // branch color: green, yellow when a repo isn't on the task's branch, as the Spaces list
++      // draws it (its offBranch: the task file's REPO_BRANCH, else the task folder with - as /).
++      const off = Boolean(branch) && wr.repos.some((r) => r.branch === "(detached)" || (r.expected ? r.branch !== r.expected : r.branch.replaceAll("/", "-") !== wr.task));
++      const branchColor = off ? t.ansi3 : (t.ansi2 ?? t.dim);
 +      const letter = initials(label); // space initials
 +      const name = div().min_w(0).truncate().text_size(fs(12.5)).font_semibold().text_color(t.foreground)
 +        .when(Boolean(wr), (el) => el.tooltip(`${label === wr.name ? "" : `${label}\n`}${wr.project} / ${wr.task}\n${wr.root}`))
@@ -424,8 +428,8 @@ index 4ec2d54..de18c4f 100644
 +          .text_size(fs(letter.length > 1 ? 8 : 9.5)).font_bold().text_color("#ffffff").child(letter)) // space initials
 +        .child(branch // wrapper repos
 +          ? v_flex().min_w(0).gap(1).child(name).child(h_flex().min_w(0).gap(4).items_center()
-+            .child(svg("mods/workspace-chrome/git-branch.svg").size(11).flex_none().text_color(t.ansi2 ?? t.dim)) // branch color: green, apart from yellow (off-branch in Spaces), accent and working blue
-+            .child(div().min_w(0).truncate().text_size(fs(11)).text_color(t.ansi2 ?? t.dim).child(branch)))
++            .child(svg("mods/workspace-chrome/git-branch.svg").size(11).flex_none().text_color(branchColor)) // branch color
++            .child(div().min_w(0).truncate().text_size(fs(11)).text_color(branchColor).child(branch)))
 +          : name)
 +        .when(!open, (el) => el.child(div().flex_none().text_size(fs(11)).text_color(t.dim).child(String(g.members.length))))
 +        .child(div().flex_1())
@@ -454,7 +458,7 @@ index 4ec2d54..de18c4f 100644
  
      return v_flex()
        .size_full()
-@@ -399,44 +630,44 @@ export default class Agents extends View {
+@@ -399,44 +634,44 @@ export default class Agents extends View {
        .bg(t.chrome)
        .border_t(1)
        .border_color(t.border)

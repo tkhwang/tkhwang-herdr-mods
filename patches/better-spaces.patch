@@ -1,5 +1,5 @@
 diff --git a/main.js b/main.js
-index f8aa00f..b0b0abe 100644
+index f8aa00f..8ae6093 100644
 --- a/main.js
 +++ b/main.js
 @@ -1,15 +1,31 @@
@@ -258,7 +258,7 @@ index f8aa00f..b0b0abe 100644
 +  }
 +
 +  // wrapper repos: the line under a task's name, indented to it. A task of one repo: its branch
-+  // (yellow when it isn't the task's), ahead and behind, after the repo's name when the person
++  // (green, yellow when it isn't the task's; branch color), ahead and behind, after the repo's name when the person
 +  // named the space. A task of several: the project, then only the repos with something to say:
 +  // a branch that is not the task's (yellow, after the repo's name), ahead, behind. Every repo's
 +  // branch is in the tooltip.
@@ -293,7 +293,7 @@ index f8aa00f..b0b0abe 100644
 +          div()
 +            .min_w(0)
 +            .truncate()
-+            .when(Boolean(offBranch(r, wr.task)), (el) => el.text_color(t.ansi3))
++            .when(Boolean(r.branch), (el) => el.text_color(offBranch(r, wr.task) ? t.ansi3 : (t.ansi2 ?? t.dim))) // branch color: as the Agents list's
 +            .child(branchName(r)),
 +        )
 +        .children(counts(r));
