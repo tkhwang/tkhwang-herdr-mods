@@ -3,7 +3,8 @@
 #
 #   ./sync.sh build                   upstream + my patches + my shared files -> build/mods
 #   ./sync.sh apply                   build, then install it and config/ into ~/.config/herdr-app
-#   ./sync.sh backup                  ~/.config/herdr-app -> patches/, own/, config/
+#   ./sync.sh backup                  ~/.config/herdr-app -> patches/, own/, config/ (mod settings
+#                                     -> config/mod-settings.json)
 #   ./sync.sh status                  each mod: where it's from, my patch's size, whether the app has it
 #   ./sync.sh update [--dry-run]      every upstream to its newest version, keeping my patches; one my
 #                                     patch doesn't go onto is left as it is, and it says why; a dry
@@ -24,6 +25,10 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd -P)"
 live="${HERDR_APP_HOME:-$HOME/.config/herdr-app}"
 src="$here/sources.json"
+# Each mod's settings, the values I changed in its mod.json `settings` (better-config edits them in
+# the app). Kept apart from patches/ and own/, so a patch holds only code and an upstream mod.json
+# merges without them: build puts them in, backup takes them out.
+settings="$here/config/mod-settings.json"
 work="$here/work"
 # Files the app writes into every mod folder.
 EXCLUDE=(--exclude '*.d.ts' --exclude jsconfig.json --exclude .DS_Store)
@@ -112,7 +117,55 @@ build_mod() { # mod dest [noshared]
 build_all() { # dest
   local m
   rm -rf "${1:?}"; mkdir -p "$1"
-  while IFS= read -r m; do build_mod "$m" "$1/$m"; done < <(built_mods)
+  while IFS= read -r m; do build_mod "$m" "$1/$m"; put_settings "$m" "$1/$m"; done < <(built_mods)
+}
+
+# ── mod settings ──────────────────────────────────────────────────────────────
+
+# A mod's settings in config/mod-settings.json, as one line of JSON; nothing when it has none.
+settings_of() { # mod
+  [ -f "$settings" ] || return 0
+  jq -c --arg m "$1" '.[$m] // empty | select(type == "object" and length > 0)' "$settings"
+}
+
+# Writes the mod's settings into its built mod.json. Its upstream and my patch have none: a mod
+# that ships a `settings` block has it replaced, as better-config would.
+put_settings() { # mod dir
+  local s j="$2/mod.json"
+  s="$(settings_of "$1")"
+  [ -n "$s" ] || return 0
+  [ -f "$j" ] || die "config/mod-settings.json: $1 has settings but no mod.json"
+  jq --argjson s "$s" '.settings = $s' "$j" >"$j.new"
+  mv "$j.new" "$j"
+}
+
+# Takes the `settings` block out of a mod's mod.json in `dir` into $TMP/settings/<mod>.json. When
+# the rest is what `base` has (the mod as built before, without settings), it gets base's text back,
+# so a settings change rewriting the file in another layout (or a reset dropping the block, which
+# better-config does by writing the whole file) leaves no change in the patch.
+take_settings() { # mod dir base-mod.json
+  local j="$2/mod.json" has=0
+  # backup checked every mod.json first (a missing one, or one whose settings isn't an object,
+  # never gets here).
+  jq -e 'type == "object"' "$j" >/dev/null 2>&1 || die "$j is not a JSON object"
+  if jq -e 'has("settings")' "$j" >/dev/null; then has=1; jq '.settings' "$j" >"$TMP/settings/$1.json"; fi
+  if [ -f "$3" ] && [ "$(jq -cS 'del(.settings)' "$j")" = "$(jq -cS 'del(.settings)' "$3")" ]; then cp "$3" "$j"
+  elif [ "$has" = 1 ]; then jq 'del(.settings)' "$j" >"$j.new"; mv "$j.new" "$j"; fi
+}
+
+# Writes config/mod-settings.json from $TMP/settings, in sources.json's order, leaving out empty
+# blocks; a mod sources.json doesn't build keeps what it had there.
+write_settings() {
+  local m f out="{}"
+  if [ -f "$settings" ]; then
+    out="$(jq -c --argjson built "$(built_mods | jq -R . | jq -cs .)" 'with_entries(select(.key as $k | $built | index($k) | not))' "$settings")"
+  fi
+  while IFS= read -r m; do
+    f="$TMP/settings/$m.json"
+    [ -f "$f" ] || continue
+    out="$(jq -c --arg m "$m" --slurpfile s "$f" 'if ($s[0] | type) == "object" and ($s[0] | length) > 0 then .[$m] = $s[0] else . end' <<<"$out")"
+  done < <(built_mods)
+  jq . <<<"$out" >"$settings"
 }
 
 same_tree() { diff -rq "${EXCLUDE[@]/--exclude/-x}" "$1" "$2" >/dev/null 2>&1; }
@@ -165,21 +218,40 @@ backup() {
       die "make the copies the same in the app, then back up again"
     fi
   done < <(all_shared)
+  # Every mod's mod.json must be readable before anything here changes: one that's missing or
+  # broken would read as no settings and drop its entry from config/mod-settings.json.
+  while IFS= read -r m; do
+    [ -d "$live/mods/$m" ] || die "missing mod: $live/mods/$m"
+    jq -e 'type == "object"' "$live/mods/$m/mod.json" >/dev/null 2>&1 ||
+      die "$live/mods/$m/mod.json is missing or not a JSON object; fix it in the app, then back up again"
+    jq -e '(has("settings") | not) or (.settings | type == "object")' "$live/mods/$m/mod.json" >/dev/null ||
+      die "$live/mods/$m/mod.json has a settings value that isn't an object; fix it in the app, then back up again"
+  done < <(built_mods)
+  # Settings go to config/mod-settings.json (below), not into patches/ or own/.
+  mkdir -p "$TMP/settings"
   while IFS= read -r m; do
     [ -d "$live/mods/$m" ] || die "missing mod: $live/mods/$m"
     rm -rf "$TMP/final"; mkdir -p "$TMP/final"
     rsync -a "${EXCLUDE[@]}" "$live/mods/$m/" "$TMP/final/"
     while IFS= read -r f; do rm -f "$TMP/final/$f"; done < <(shared_of "$m")
+    # The mod as my patch has it now; with a patch that no longer applies, no base.
+    pristine "$m" "$TMP/base"
+    if [ -f "$here/patches/$m.patch" ] && ! apply_patch "$here/patches/$m.patch" "$TMP/base" 2>/dev/null; then rm -f "$TMP/base/mod.json"; fi
+    take_settings "$m" "$TMP/final" "$TMP/base/mod.json"
     make_patch "$m" "$TMP/final"
   done < <(patched_mods)
   while IFS= read -r m; do
     [ -d "$live/mods/$m" ] || die "missing mod: $live/mods/$m"
     mkdir -p "$here/own/mods/$m"
+    rm -f "$TMP/own-mod.json"
+    if [ -f "$here/own/mods/$m/mod.json" ]; then cp "$here/own/mods/$m/mod.json" "$TMP/own-mod.json"; fi
     # Its shared files go back to own/shared/ (below), not into own/mods/.
     local shared=()
     while IFS= read -r f; do shared+=(--exclude "/$f"); done < <(shared_of "$m")
     rsync -a --delete "${EXCLUDE[@]}" ${shared[@]+"${shared[@]}"} "$live/mods/$m/" "$here/own/mods/$m/"
+    take_settings "$m" "$here/own/mods/$m" "$TMP/own-mod.json"
   done < <(own_mods)
+  write_settings
   while IFS= read -r f; do cp "$TMP/shared/$f" "$here/own/shared/$f"; done < <(all_shared)
   while IFS= read -r f; do
     [ -f "$live/$f" ] || die "missing file: $live/$f"

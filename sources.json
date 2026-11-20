@@ -108,6 +108,15 @@
       },
       "license": "herdr-mods"
     },
+    "better-config": {
+      "kind": "oss",
+      "upstream": {
+        "repo": "munza/herdr-mods",
+        "commit": "1abf4870adb4c3f7a71739db1e0c29493f5e3f95",
+        "path": "better-config/mods/better-config"
+      },
+      "license": "herdr-mods"
+    },
     "git-graph": {
       "kind": "oss",
       "upstream": {
