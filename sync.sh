@@ -145,7 +145,8 @@ put_settings() { # mod dir
 # better-config does by writing the whole file) leaves no change in the patch.
 take_settings() { # mod dir base-mod.json
   local j="$2/mod.json" has=0
-  [ -f "$j" ] && jq -e 'type == "object"' "$j" >/dev/null 2>&1 || return 0
+  # backup checked every mod.json first (a missing one never gets here).
+  jq -e 'type == "object"' "$j" >/dev/null 2>&1 || die "$j is not a JSON object"
   if jq -e 'has("settings")' "$j" >/dev/null; then has=1; jq '.settings' "$j" >"$TMP/settings/$1.json"; fi
   if [ -f "$3" ] && [ "$(jq -cS 'del(.settings)' "$j")" = "$(jq -cS 'del(.settings)' "$3")" ]; then cp "$3" "$j"
   elif [ "$has" = 1 ]; then jq 'del(.settings)' "$j" >"$j.new"; mv "$j.new" "$j"; fi
@@ -216,6 +217,13 @@ backup() {
       die "make the copies the same in the app, then back up again"
     fi
   done < <(all_shared)
+  # Every mod's mod.json must be readable before anything here changes: one that's missing or
+  # broken would read as no settings and drop its entry from config/mod-settings.json.
+  while IFS= read -r m; do
+    [ -d "$live/mods/$m" ] || die "missing mod: $live/mods/$m"
+    jq -e 'type == "object"' "$live/mods/$m/mod.json" >/dev/null 2>&1 ||
+      die "$live/mods/$m/mod.json is missing or not a JSON object; fix it in the app, then back up again"
+  done < <(built_mods)
   # Settings go to config/mod-settings.json (below), not into patches/ or own/.
   mkdir -p "$TMP/settings"
   while IFS= read -r m; do
