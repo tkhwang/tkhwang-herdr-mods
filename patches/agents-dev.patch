@@ -1,5 +1,5 @@
 diff --git a/main.js b/main.js
-index 4ec2d54..85ffc28 100644
+index 4ec2d54..e529f17 100644
 --- a/main.js
 +++ b/main.js
 @@ -3,7 +3,7 @@
@@ -377,7 +377,7 @@ index 4ec2d54..85ffc28 100644
          .font_medium()
          .cursor_pointer()
          .hover((s) => s.text_color(t.foreground))
-@@ -389,9 +554,74 @@ export default class Agents extends View {
+@@ -389,9 +554,81 @@ export default class Agents extends View {
            .when(!byPriority && top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
            .child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim)));
      };
@@ -391,12 +391,19 @@ index 4ec2d54..85ffc28 100644
 +      const top = g.members.reduce((m, a) => ((RANK[a.status] ?? 0) > (RANK[m] ?? 0) ? a.status : m), null);
 +      const space = g.id.slice(3);
 +      // wrapper repos: a task's name and letter as the Spaces list draws them, the project and
-+      // task folder in the tooltip. A task of one repo is named after the repo, so its branch,
-+      // which says which task, goes on a line under the name.
++      // task folder in the tooltip. The task's branch, which says which task, goes on a line
++      // under the name: a task of one repo, its repo's; a task of several, theirs when every
++      // repo is on the same one (none when they differ, one was never read, or the task has
++      // more repos than better-spaces reads: `truncated`). A repo the last look couldn't read
++      // (`unread`) keeps its last branch, as the Spaces list shows it, until it is read again.
 +      const wr = wrappers[space];
 +      const label = spaceName(space, g.label);
-+      const single = wr?.repos.length === 1 ? wr.repos[0] : null;
-+      const branch = single?.branch ? (single.branch === "(detached)" ? "detached" : single.branch) : null; // none: not read yet
++      const common = wr?.repos.length && !wr.truncated && wr.repos.every((r) => r.branch && r.branch === wr.repos[0].branch) ? wr.repos[0].branch : null;
++      const branch = common ? (common === "(detached)" ? "detached" : common) : null; // none: not read yet, or repos differ
++      // branch color: green, yellow when a repo isn't on the task's branch, as the Spaces list
++      // draws it (its offBranch: the task file's REPO_BRANCH, else the task folder with - as /).
++      const off = Boolean(branch) && wr.repos.some((r) => r.branch === "(detached)" || (r.expected ? r.branch !== r.expected : r.branch.replaceAll("/", "-") !== wr.task));
++      const branchColor = off ? t.ansi3 : (t.ansi2 ?? t.dim);
 +      const letter = initials(label); // space initials
 +      const name = div().min_w(0).truncate().text_size(fs(12.5)).font_semibold().text_color(t.foreground)
 +        .when(Boolean(wr), (el) => el.tooltip(`${label === wr.name ? "" : `${label}\n`}${wr.project} / ${wr.task}\n${wr.root}`))
@@ -423,8 +430,8 @@ index 4ec2d54..85ffc28 100644
 +          .text_size(fs(letter.length > 1 ? 8 : 9.5)).font_bold().text_color("#ffffff").child(letter)) // space initials
 +        .child(branch // wrapper repos
 +          ? v_flex().min_w(0).gap(1).child(name).child(h_flex().min_w(0).gap(4).items_center()
-+            .child(svg("mods/workspace-chrome/git-branch.svg").size(11).flex_none().text_color(t.dim))
-+            .child(div().min_w(0).truncate().text_size(fs(11)).text_color(t.dim).child(branch)))
++            .child(svg("mods/workspace-chrome/git-branch.svg").size(11).flex_none().text_color(branchColor)) // branch color
++            .child(div().min_w(0).truncate().text_size(fs(11)).text_color(branchColor).child(branch)))
 +          : name)
 +        .when(!open, (el) => el.child(div().flex_none().text_size(fs(11)).text_color(t.dim).child(String(g.members.length))))
 +        .child(div().flex_1())
@@ -453,7 +460,7 @@ index 4ec2d54..85ffc28 100644
  
      return v_flex()
        .size_full()
-@@ -399,44 +629,44 @@ export default class Agents extends View {
+@@ -399,44 +636,44 @@ export default class Agents extends View {
        .bg(t.chrome)
        .border_t(1)
        .border_color(t.border)
