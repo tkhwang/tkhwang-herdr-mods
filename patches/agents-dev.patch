@@ -1,5 +1,5 @@
 diff --git a/main.js b/main.js
-index 4ec2d54..85ffc28 100644
+index 4ec2d54..5cb321d 100644
 --- a/main.js
 +++ b/main.js
 @@ -3,7 +3,7 @@
@@ -377,7 +377,7 @@ index 4ec2d54..85ffc28 100644
          .font_medium()
          .cursor_pointer()
          .hover((s) => s.text_color(t.foreground))
-@@ -389,9 +554,74 @@ export default class Agents extends View {
+@@ -389,9 +554,75 @@ export default class Agents extends View {
            .when(!byPriority && top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
            .child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim)));
      };
@@ -391,12 +391,13 @@ index 4ec2d54..85ffc28 100644
 +      const top = g.members.reduce((m, a) => ((RANK[a.status] ?? 0) > (RANK[m] ?? 0) ? a.status : m), null);
 +      const space = g.id.slice(3);
 +      // wrapper repos: a task's name and letter as the Spaces list draws them, the project and
-+      // task folder in the tooltip. A task of one repo is named after the repo, so its branch,
-+      // which says which task, goes on a line under the name.
++      // task folder in the tooltip. The task's branch, which says which task, goes on a line
++      // under the name: a task of one repo, its repo's; a task of several, theirs when every
++      // repo is on the same one (none when they differ or one isn't read yet).
 +      const wr = wrappers[space];
 +      const label = spaceName(space, g.label);
-+      const single = wr?.repos.length === 1 ? wr.repos[0] : null;
-+      const branch = single?.branch ? (single.branch === "(detached)" ? "detached" : single.branch) : null; // none: not read yet
++      const common = wr?.repos.length && wr.repos.every((r) => r.branch && r.branch === wr.repos[0].branch) ? wr.repos[0].branch : null;
++      const branch = common ? (common === "(detached)" ? "detached" : common) : null; // none: not read yet, or repos differ
 +      const letter = initials(label); // space initials
 +      const name = div().min_w(0).truncate().text_size(fs(12.5)).font_semibold().text_color(t.foreground)
 +        .when(Boolean(wr), (el) => el.tooltip(`${label === wr.name ? "" : `${label}\n`}${wr.project} / ${wr.task}\n${wr.root}`))
@@ -453,7 +454,7 @@ index 4ec2d54..85ffc28 100644
  
      return v_flex()
        .size_full()
-@@ -399,44 +629,44 @@ export default class Agents extends View {
+@@ -399,44 +630,44 @@ export default class Agents extends View {
        .bg(t.chrome)
        .border_t(1)
        .border_color(t.border)
