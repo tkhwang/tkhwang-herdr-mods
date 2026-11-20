@@ -1,5 +1,5 @@
 diff --git a/main.js b/main.js
-index f8aa00f..8ae6093 100644
+index f8aa00f..cf353ae 100644
 --- a/main.js
 +++ b/main.js
 @@ -1,15 +1,31 @@
@@ -52,7 +52,7 @@ index f8aa00f..8ae6093 100644
  const checkoutKey = (space, paneList) =>
    JSON.stringify([space.machine ?? null, spaceFolder(space, paneList)]);
  const basename = (path) => path.replace(/\/+$/, "").split("/").pop();
-@@ -47,6 +64,49 @@ const basename = (path) => path.replace(/\/+$/, "").split("/").pop();
+@@ -47,6 +64,50 @@ const basename = (path) => path.replace(/\/+$/, "").split("/").pop();
  // occasionally to catch edits and commits made outside Herdr.
  const GIT_FALLBACK_MS = 15000;
  
@@ -80,10 +80,11 @@ index f8aa00f..8ae6093 100644
 +  "exit 0",
 +].join("\n");
 +const WRAPPER_MAX_REPOS = 6;
-+// wrapper repos: shared { [space id]: { folder, name, task, root, project, repos: [{ name,
-+// branch, expected, ahead, behind, unread? }] } }, for other mods (agents-dev's space headers
-+// and repo tags); `name` is the space's name unless the person named it. `unread`: the last
-+// look couldn't read that repo, so it shows what it showed before, or no branch (null).
++// wrapper repos: shared { [space id]: { folder, name, task, root, project, truncated?, repos:
++// [{ name, branch, expected, ahead, behind, unread? }] } }, for other mods (agents-dev's space
++// headers and repo tags); `name` is the space's name unless the person named it. `unread`: the
++// last look couldn't read that repo, so it shows what it showed before, or no branch (null).
++// `truncated`: the task holds more than WRAPPER_MAX_REPOS repos and `repos` has only the first.
 +const WRAPPERS = "better-spaces.wrappers";
 +
 +// wrapper repos: a task repo's branch as shown ("?" for a repo not read yet).
@@ -102,7 +103,7 @@ index f8aa00f..8ae6093 100644
  // What a stored color name looks like on an avatar (the same in every mod
  // that draws space avatars): one strong color per hue, light and dark alike.
  const AVATAR_COLORS = {
-@@ -63,9 +123,67 @@ export function glyph(status) {
+@@ -63,9 +124,67 @@ export function glyph(status) {
    return status === "blocked" || status === "done" ? "●" : "·";
  }
  
@@ -171,7 +172,7 @@ index f8aa00f..8ae6093 100644
  
  export default class Spaces extends View {
    // ── Lifecycle and refresh scheduling ──────────────────────────────────────
-@@ -83,6 +201,10 @@ export default class Spaces extends View {
+@@ -83,6 +202,10 @@ export default class Spaces extends View {
      this.ready = {}; // machine -> its layout was readable at the last look
      this.at = {}; // Space ID -> checkout key at the previous refresh.
      this.watching = new Set(); // local repos' git folders
@@ -182,7 +183,7 @@ index f8aa00f..8ae6093 100644
      // Spaces made while this runs wait (at most a moment) for their git, so a
      // worktree appears under its repo instead of jumping there.
      this.shown = new Set(spaces().map((s) => s.id));
-@@ -101,6 +223,134 @@ export default class Spaces extends View {
+@@ -101,6 +224,134 @@ export default class Spaces extends View {
      // `git status` walks the whole tree, on another machine a process there:
      // only when its answer could have changed (see `due`).
      cx.timer.every(250, (cx) => this.checkNew(cx));
@@ -317,7 +318,7 @@ index f8aa00f..8ae6093 100644
    }
  
    checkNew(cx) {
-@@ -123,6 +373,7 @@ export default class Spaces extends View {
+@@ -123,6 +374,7 @@ export default class Spaces extends View {
      this.prObserver.refresh(places, cx);
      const due = this.due(now, sp, ps);
      if (due.size) this.refreshGit(due, cx);
@@ -325,7 +326,7 @@ index f8aa00f..8ae6093 100644
      if (sp.some((s) => !this.shown.has(s.id))) cx.notify();
    }
  
-@@ -188,7 +439,9 @@ export default class Spaces extends View {
+@@ -188,7 +440,9 @@ export default class Spaces extends View {
  
      if (window().active) {
        for (const key of usedKeys) {
@@ -336,7 +337,7 @@ index f8aa00f..8ae6093 100644
          if (
            needsPolling &&
            !this.folded.has(JSON.parse(key)[0]) &&
-@@ -268,8 +521,10 @@ export default class Spaces extends View {
+@@ -268,8 +522,10 @@ export default class Spaces extends View {
        );
        if (r.code !== 0) {
          // Only git's own "no" is remembered as no repo; anything else is asked again.
@@ -348,7 +349,7 @@ index f8aa00f..8ae6093 100644
          return;
        }
        // The repo's own .git folder names it; a worktree's top differs from it.
-@@ -304,6 +559,9 @@ export default class Spaces extends View {
+@@ -304,6 +560,9 @@ export default class Spaces extends View {
          }
        }
        this.git[key] = info;
@@ -358,7 +359,7 @@ index f8aa00f..8ae6093 100644
        if (!on) this.watch(repo, cx);
      } catch {
        // Couldn't ask (the machine is away): keep what it showed, look again later.
-@@ -312,6 +570,106 @@ export default class Spaces extends View {
+@@ -312,6 +571,105 @@ export default class Spaces extends View {
      }
    }
  
@@ -402,10 +403,8 @@ index f8aa00f..8ae6093 100644
 +    if (ls.code === NOT_A_TASK) return NOT_A_TASK;
 +    if (ls.code !== 0) return null;
 +    const lines = ls.stdout.split("\n");
-+    const names = lines
-+      .filter((l) => l.startsWith("R "))
-+      .map((l) => l.slice(2))
-+      .slice(0, WRAPPER_MAX_REPOS);
++    const found = lines.filter((l) => l.startsWith("R ")).map((l) => l.slice(2));
++    const names = found.slice(0, WRAPPER_MAX_REPOS);
 +    // A folder under a project without a task file is a task only while it holds repos.
 +    if (lines.includes("L") && !names.length) return NOT_A_TASK;
 +    const expected = {};
@@ -445,7 +444,8 @@ index f8aa00f..8ae6093 100644
 +    // task of several by its folder (its repos are the same in every task of the project).
 +    const task = basename(root);
 +    const name = names.length === 1 ? names[0] : task;
-+    return names.length ? { name, task, root, project, repos } : null;
++    const truncated = found.length > names.length ? { truncated: true } : {}; // wrapper repos: more repos than read
++    return names.length ? { name, task, root, project, ...truncated, repos } : null;
 +  }
 +
 +  // wrapper repos: the current spaces' wrappers, for other mods (agents-dev's space headers),
