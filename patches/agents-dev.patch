@@ -1,5 +1,5 @@
 diff --git a/main.js b/main.js
-index 4ec2d54..e529f17 100644
+index 4ec2d54..b4e9293 100644
 --- a/main.js
 +++ b/main.js
 @@ -3,7 +3,7 @@
@@ -73,11 +73,11 @@ index 4ec2d54..e529f17 100644
 +// current highlight, status mark: as in the Spaces list, a row's background says where you are and what its agent does: needs you, a pale orange (the most urgent state gets the strongest mark);
 +// working, a pale working blue (the theme's working blue means working alone); the current row,
 +// a pale tint of the text color (so it shows in light themes too; stronger than a hover's), its
-+// name bold; the current row that needs you or works, a deeper orange or blue. Done and idle
-+// rows have no background: done's green stop at the right end says it.
++// name bold; the current row that needs you or works, a deeper orange or blue. Done, a pale green
++// (its green stop alone was easy to miss); idle rows have no background.
 +const tint = (color, aa) => (/^#[0-9a-f]{6}$/i.test(color ?? "") ? color + aa : color);
 +function rowTint(current, state, t) {
-+  const color = state === "blocked" ? GLOW.blocked : state === "working" ? t.working : null;
++  const color = state === "blocked" ? GLOW.blocked : state === "working" ? t.working : state === "done" ? GLOW.done : null;
 +  if (color) return tint(color, current ? "40" : "24");
 +  return tint(t.foreground, "2e");
 +}
@@ -223,7 +223,7 @@ index 4ec2d54..e529f17 100644
    }
  
    render(cx) {
-@@ -215,10 +337,14 @@ export default class Agents extends View {
+@@ -215,10 +337,19 @@ export default class Agents extends View {
      let list = agents();
      this.listed = new Map(list.map((a) => [a.address, a.status]));
      const all = terminals();
@@ -236,21 +236,26 @@ index 4ec2d54..e529f17 100644
 +    const cur = this.current(list); // current agent
 +    const isCur = (a) => a.address === cur; // current agent
 +    const curSpace = spaces().find((s) => s.active)?.id; // current space
++    const curAgents = list.filter((a) => a.space === curSpace); // current agent
++    const sole = curAgents.length === 1 && this.tree(all, curAgents[0].address).length === 0; // current agent: alone in the current space
++    const working = (a) => a.status === "working" || this.tree(all, a.address).some((s) => kidStatus(s.t, this.listed) === "working"); // running space
++    const busy = new Set(list.filter(working).map((a) => a.space)); // running space: spaces where an agent works
++    const boxed = (space) => space === curSpace || busy.has(space); // current space, running space: drawn as a block
      const byPriority = sort.id === "priority";
      const urgency = new Map(list.map((a) => [a.address, Math.max(this.rank(a), ...this.tree(all, a.address).map((s) => RANK[kidStatus(s.t, this.listed)] ?? 0))]));
      const rankOf = (a) => urgency.get(a.address);
-@@ -233,7 +359,9 @@ export default class Agents extends View {
+@@ -233,7 +364,9 @@ export default class Agents extends View {
        const subs = collapsed ? [] : this.tree(all, a.address);
        const r = row(a, i, subs);
        if (this.folded.has(a.address)) return [r];
 -      return [r, ...subs.map((s) => this.subRow(t, s, shown, byPriority))];
 +      const nested = !byPriority && !this.pins.includes(a.address); // nested rows
-+      const inset = nested && a.space === curSpace; // current space: sub-terminals share their parent row margins
++      const inset = nested && boxed(a.space); // current space, running space: sub-terminals share their parent row margins
 +      return [r, ...subs.map((s) => this.subRow(t, s, shown, byPriority, nested, inset))];
      };
  
      // The fold chevron; folded, the count too, colored by the most urgent one.
-@@ -249,7 +377,7 @@ export default class Agents extends View {
+@@ -249,7 +382,7 @@ export default class Agents extends View {
          .flex()
          .items_center()
          .rounded(4)
@@ -259,7 +264,7 @@ index 4ec2d54..e529f17 100644
          .text_color(open ? t.dim : (t[top] ?? t.dim))
          .cursor_pointer()
          .hover((s) => s.bg(t.hover).text_color(t.foreground))
-@@ -277,6 +405,31 @@ export default class Agents extends View {
+@@ -277,6 +410,31 @@ export default class Agents extends View {
        if (detail.get(a.address) == null && seen[`${a.space_name}\u0000`] > 1) detail.set(a.address, label(a));
      }
  
@@ -291,7 +296,7 @@ index 4ec2d54..e529f17 100644
      const row = (a, i, subs = []) => {
        const pic = icon(a.program, 16, t.foreground);
        const more = detail.get(a.address);
-@@ -285,18 +438,22 @@ export default class Agents extends View {
+@@ -285,18 +443,22 @@ export default class Agents extends View {
        if (collapsed) {
          return h_flex()
            .id(`ag-${a.address}`)
@@ -303,7 +308,7 @@ index 4ec2d54..e529f17 100644
            .flex_none()
            .items_center()
            .gap(4)
-+          .when(isCur(a) || a.status === "working" || a.status === "blocked", (el) => el.bg(isCur(a) ? agentTint(a.status, t) : rowTint(false, a.status, t))) // current highlight, status mark
++          .when(isCur(a) || a.status === "working" || a.status === "blocked" || a.status === "done", (el) => el.bg(isCur(a) ? agentTint(a.status, t) : rowTint(false, a.status, t))) // current highlight, status mark
 +          .when(isCur(a), (el) => el.child(currentBar(t))) // current highlight
            .hover((s) => s.bg(t.hover))
            .on_click(() => run("pane.focus", { pane: a.pane }))
@@ -316,12 +321,12 @@ index 4ec2d54..e529f17 100644
        const isPinned = this.pins.includes(a.address);
        const pin = div()
          .id(`pin-${a.address}`)
-@@ -318,16 +475,22 @@ export default class Agents extends View {
+@@ -318,16 +480,22 @@ export default class Agents extends View {
        // Under a space header the space goes without saying; an automatic tab number says nothing.
        // Without a space header above (priority, pinned) the row names its space.
        const full = byPriority || isPinned;
 -      const name = full ? a.space_name || label(a) : more ?? (/^\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a));
-+      const inset = !full && a.space === curSpace; // current space: inset the whole row, including its background
++      const inset = !full && boxed(a.space); // current space, running space: inset the whole row, including its background
 +      const name = full ? spaceName(a.space, a.space_name) || label(a) : more ?? (/^\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a)); // wrapper repos
 +      const repo = repoOf(a); // wrapper repos
        return h_flex()
@@ -338,12 +343,12 @@ index 4ec2d54..e529f17 100644
          .items_center()
          .gap(9)
 -        .when(a.focused, (el) => el.bg(t.selected))
-+        .when(isCur(a) || a.status === "working" || a.status === "blocked", (el) => el.bg(isCur(a) ? agentTint(a.status, t) : rowTint(false, a.status, t))) // current highlight, status mark
-+        .when(isCur(a), (el) => el.child(currentBar(t, full || inset ? 0 : NEST))) // current highlight: nested under its space's bar
++        .when(isCur(a) || a.status === "working" || a.status === "blocked" || a.status === "done", (el) => el.bg(isCur(a) ? agentTint(a.status, t) : rowTint(false, a.status, t))) // current highlight, status mark
++        .when(isCur(a) && !(inset && sole), (el) => el.child(currentBar(t, full || inset ? 0 : NEST))) // current highlight: nested under its space's bar; none for the space's only agent, which the space's bar already points at
          .cursor_pointer()
          .hover((s) => s.bg(t.hover))
          .on_hover((on, cx) => {
-@@ -343,12 +506,14 @@ export default class Agents extends View {
+@@ -343,12 +511,14 @@ export default class Agents extends View {
              cx.notify();
            })).child(pic)))
          .child(h_flex().flex_1().min_w(0).gap(5).items_center()
@@ -361,7 +366,7 @@ index 4ec2d54..e529f17 100644
          .child(this.status(t, a, byPriority && !isPinned));
      };
  
-@@ -369,12 +534,12 @@ export default class Agents extends View {
+@@ -369,12 +539,12 @@ export default class Agents extends View {
        return h_flex()
          .id(g.id)
          .px(8)
@@ -377,7 +382,7 @@ index 4ec2d54..e529f17 100644
          .font_medium()
          .cursor_pointer()
          .hover((s) => s.text_color(t.foreground))
-@@ -389,9 +554,81 @@ export default class Agents extends View {
+@@ -389,9 +559,87 @@ export default class Agents extends View {
            .when(!byPriority && top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
            .child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim)));
      };
@@ -386,7 +391,7 @@ index 4ec2d54..e529f17 100644
 +    // draws it and the name in bold. No git state (ahead, behind, PRs): the Spaces list shows
 +    // that, the Agents list who works where.
 +    // MARK and spaceFill (above the rows) are copied from spaces' main.js (keep them in step).
-+    const spaceHeader = (g, first) => {
++    const spaceHeader = (g, first, boxed) => {
 +      const open = !this.folded.has(g.id);
 +      const top = g.members.reduce((m, a) => ((RANK[a.status] ?? 0) > (RANK[m] ?? 0) ? a.status : m), null);
 +      const space = g.id.slice(3);
@@ -408,7 +413,7 @@ index 4ec2d54..e529f17 100644
 +      const name = div().min_w(0).truncate().text_size(fs(12.5)).font_semibold().text_color(t.foreground)
 +        .when(Boolean(wr), (el) => el.tooltip(`${label === wr.name ? "" : `${label}\n`}${wr.project} / ${wr.task}\n${wr.root}`))
 +        .child(label);
-+      const on = space === curSpace; // current space
++      const on = boxed; // current space, running space: in a block
 +      return h_flex()
 +        .id(g.id)
 +        .relative() // current space
@@ -442,25 +447,31 @@ index 4ec2d54..e529f17 100644
 +    // current space: in "Grouped by space" the current space's header and its agents sit in one
 +    // block with the Spaces list's bar down its left edge, and the current agent's own bar steps
 +    // in under it:  | space  /  |  | agent.
++    // running space: another space where an agent (or a terminal under one) works sits in the
++    // same neutral block, without the bar: the bar alone says which space is current.
      const rows = collapsed
        ? list.flatMap(withKids)
 -      : groups.flatMap((g) => [header(g), ...(this.folded.has(g.id) ? [] : g.members.flatMap(withKids))]);
 +      : groups.flatMap((g, i) => {
++          const isSpace = g.id.startsWith("sp-");
++          const on = g.id === `sp-${curSpace}`; // current space
++          const run = isSpace && !on && busy.has(g.id.slice(3)); // running space
 +          const block = [
-+            g.id.startsWith("sp-") ? spaceHeader(g, i === 0) : header(g),
++            isSpace ? spaceHeader(g, i === 0, on || run) : header(g),
 +            ...(this.folded.has(g.id) ? [] : g.members.flatMap(withKids)),
 +          ];
-+          if (g.id !== `sp-${curSpace}`) return block;
-+          return [v_flex().id(`cur-${g.id}`).relative().flex_none().rounded(8).bg(tint(t.foreground, "1a")) // current space: a pale neutral block
++          if (!on && !run) return block;
++          return [v_flex().id(`${on ? "cur" : "run"}-${g.id}`).relative().flex_none().rounded(8)
++            .bg(tint(t.foreground, "1a")) // current space, running space: a pale neutral block
 +            .when(i > 0, (el) => el.mt(rowPx(6)).border_t(1).border_color(t.border))
-+            .when(!this.folded.has(g.id), (el) => el.pb(rowPx(6))) // current space: breathing room below the last row
++            .when(!this.folded.has(g.id), (el) => el.pb(rowPx(6))) // breathing room below the last row
 +            .children(block)
-+            .child(div().absolute().left(0).top(6).bottom(6).w(3).rounded(2).bg(t.foreground))];
++            .when(on, (el) => el.child(div().absolute().left(0).top(6).bottom(6).w(3).rounded(2).bg(t.foreground)))]; // current space: the bar
 +        });
  
      return v_flex()
        .size_full()
-@@ -399,44 +636,44 @@ export default class Agents extends View {
+@@ -399,44 +647,44 @@ export default class Agents extends View {
        .bg(t.chrome)
        .border_t(1)
        .border_color(t.border)
